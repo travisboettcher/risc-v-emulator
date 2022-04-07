@@ -3,6 +3,7 @@ use crate::register::Register;
 
 mod register;
 mod instruction;
+mod math_utils;
 
 fn main() {
     let mut register = Register::new();
