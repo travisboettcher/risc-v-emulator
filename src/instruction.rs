@@ -78,8 +78,8 @@ impl Instruction {
                         register.put(rd, register.get(rs1) << imm)
                     },
                     SLTI => { // Slti
-                        let i = register.get(rs1) as isize;
-                        if i < (imm as isize) {
+                        let i = register.get(rs1) as i32;
+                        if i < (imm as i32) {
                             register.put(rd, 1);
                         } else {
                             register.put(rd, 0);
@@ -102,12 +102,14 @@ impl Instruction {
                         let discriminator = imm >> 10;
                         match discriminator {
                             0b00 => {
+                                let shift = imm & 0b11111;
                                 let i = register.get(rs1);
-                                register.put(rd, i >> imm);
+                                register.put(rd, i >> shift);
                             },
                             0b01 => {
-                                let i = register.get(rs1) as isize;
-                                register.put(rd, (i >> imm) as u32);
+                                let shift = imm & 0b11111;
+                                let i = register.get(rs1) as i32;
+                                register.put(rd, (i >> shift) as u32);
                             },
                             _ => panic!()
                         }
@@ -141,8 +143,9 @@ impl Instruction {
                         register.put(rd, i << j)
                     },
                     SLT => {
-                        let i = register.get(rs1) as isize;
-                        let j = register.get(rs2) as isize;
+                        let i = register.get(rs1) as i32;
+                        let j = register.get(rs2) as i32;
+
                         if i < j {
                             register.put(rd, 1);
                         } else {
@@ -169,7 +172,7 @@ impl Instruction {
                         register.put(rd, i >> j);
                     },
                     SRA => {
-                        let i = register.get(rs1) as isize;
+                        let i = register.get(rs1) as i32;
                         let j = register.get(rs2) & 0b11111;
                         register.put(rd, (i >> j) as u32);
                     },
@@ -403,4 +406,294 @@ fn test_slli() {
     instruction.execute(&mut register);
 
     assert_eq!(register.get(26), 0x33330000);
+}
+
+#[test]
+fn test_slt_equal() {
+    let mut register = Register::new();
+    register.put(26, 0x66666667);
+    register.put(18, 0x66666667);
+
+    let instruction = RFormatInstruction {
+        rd: 26,
+        funct3: 0b010,
+        rs1: 26,
+        rs2: 18,
+        funct7: 0b0000000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(26), 0x0);
+}
+
+#[test]
+fn test_slt_greater_than() {
+    let mut register = Register::new();
+    register.put(26, 0x66666667);
+    register.put(18, 0x66666667);
+
+    let instruction = RFormatInstruction {
+        rd: 26,
+        funct3: 0b010,
+        rs1: 26,
+        rs2: 18,
+        funct7: 0b0000000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(26), 0x0);
+}
+
+#[test]
+fn test_slt_less_than() {
+    let mut register = Register::new();
+    register.put(26, (-0x201i32) as u32);
+    register.put(18, 0x5);
+
+    let instruction = RFormatInstruction {
+        rd: 26,
+        funct3: 0b010,
+        rs1: 26,
+        rs2: 18,
+        funct7: 0b0000000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(26), 0x1);
+}
+
+#[test]
+fn test_slti_eq() {
+    let mut register = Register::new();
+    register.put(14, 0x10);
+
+    let instruction = IFormatInstruction {
+        imm: 0x10,
+        rs1: 14,
+        funct3: SLTI,
+        rd: 27
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(27), 0x0);
+}
+
+#[test]
+fn test_slti_gt() {
+    let mut register = Register::new();
+    register.put(25, -0x81i32 as u32);
+
+    let instruction = IFormatInstruction {
+        imm: -0x800,
+        rs1: 25,
+        funct3: SLTI,
+        rd: 12
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(12), 0x0);
+}
+
+#[test]
+fn test_slti_lt() {
+    let mut register = Register::new();
+    register.put(5, -0x1001i32 as u32);
+
+    let instruction = IFormatInstruction {
+        imm: 0x0,
+        rs1: 5,
+        funct3: SLTI,
+        rd: 5
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(5), 0x1);
+}
+
+#[test]
+fn test_sltiu_gt() {
+    let mut register = Register::new();
+    register.put(23, 0x400);
+
+    let instruction = IFormatInstruction {
+        imm: 0x0,
+        rs1: 23,
+        funct3: SLTIU,
+        rd: 28
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(28), 0x0);
+}
+
+#[test]
+fn test_sltiu_lt() {
+    let mut register = Register::new();
+    register.put(2, 0x800);
+
+    let instruction = IFormatInstruction {
+        imm: 0xfff,
+        rs1: 2,
+        funct3: SLTIU,
+        rd: 2
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(2), 0x1);
+}
+
+#[test]
+fn test_sltu_lt() {
+    let mut register = Register::new();
+    register.put(14, 0xfffffffe);
+    register.put(24, 0xffffffff);
+
+    let instruction = RFormatInstruction {
+        rd: 14,
+        funct3: 0b011,
+        rs1: 14,
+        rs2: 24,
+        funct7: 0b0000000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(14), 0x1);
+}
+
+#[test]
+fn test_sltu_gt() {
+    let mut register = Register::new();
+    register.put(5, 0xffffffff);
+    register.put(14, 0x0);
+
+    let instruction = RFormatInstruction {
+        rd: 19,
+        funct3: 0b011,
+        rs1: 5,
+        rs2: 14,
+        funct7: 0b0000000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(19), 0x0);
+}
+
+#[test]
+fn test_sra() {
+    let mut register = Register::new();
+    register.put(16, -0x80000000i32 as u32);
+    register.put(27, 0x8);
+
+    let instruction = RFormatInstruction {
+        rd: 16,
+        funct3: 0b101,
+        rs1: 16,
+        rs2: 27,
+        funct7: 0b0100000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(16), -0x800000i32 as u32)
+}
+
+#[test]
+fn test_srai() {
+    let mut register = Register::new();
+    register.put(31, -0x9i32 as u32);
+
+    let instruction = IFormatInstruction {
+        imm: 0x9 + 0b010000000000, // adding discriminator
+        rs1: 31,
+        funct3: SRLI,
+        rd: 25
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(25), -0x1i32 as u32)
+}
+
+#[test]
+fn test_srl() {
+    let mut register = Register::new();
+    register.put(26, -0x400001i32 as u32);
+    register.put(11, 0xf);
+
+    let instruction = RFormatInstruction {
+        rd: 11,
+        funct3: 0b101,
+        rs1: 26,
+        rs2: 11,
+        funct7: 0b0000000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(11), 0x1ff7f)
+}
+
+#[test]
+fn test_srli() {
+    let mut register = Register::new();
+    register.put(30, -0xb504i32 as u32);
+
+    let instruction = IFormatInstruction {
+        imm: 0x2,
+        rs1: 30,
+        funct3: SRLI,
+        rd: 8
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(8), 0x3fffd2bf)
+}
+
+#[test]
+fn test_sub() {
+    let mut register = Register::new();
+    register.put(24, 0x55555554);
+    register.put(26, 0x6);
+
+    let instruction = RFormatInstruction {
+        rd: 26,
+        funct3: 0b000,
+        rs1: 24,
+        rs2: 26,
+        funct7: 0b0100000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(26), 0x5555554e)
+}
+
+#[test]
+fn test_xor() {
+    let mut register = Register::new();
+    register.put(27, 0x66666665);
+    register.put(24, 0x3);
+
+    let instruction = RFormatInstruction {
+        rd: 24,
+        funct3: 0b100,
+        rs1: 27,
+        rs2: 24,
+        funct7: 0b0000000
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(24), 0x66666666)
+}
+
+#[test]
+fn test_xori() {
+    let mut register = Register::new();
+    register.put(24, 0x33333334);
+
+    let instruction = IFormatInstruction {
+        imm: -0x800,
+        rs1: 24,
+        funct3: XORI,
+        rd: 10
+    };
+    instruction.execute(&mut register);
+
+    assert_eq!(register.get(10), 0xcccccb34)
 }
