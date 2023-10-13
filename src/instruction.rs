@@ -22,14 +22,15 @@ pub const LOAD: u32   = 0b0000011;
 pub const STORE: u32  = 0b0100011;
 
 /// functions
-pub const ADDI: u32  = 0b000;
-pub const SLLI: u32  = 0b001;
-pub const SLTI: u32  = 0b010;
-pub const SLTIU: u32 = 0b011;
-pub const XORI: u32  = 0b100;
-pub const SRLI: u32  = 0b101;
-pub const ORI: u32   = 0b110;
-pub const ANDI: u32  = 0b111;
+pub const ADDI: u32  = 0b0000000000;
+pub const SLLI: u32  = 0b0000000001;
+pub const SLTI: u32  = 0b0000000010;
+pub const SLTIU: u32 = 0b0000000011;
+pub const XORI: u32  = 0b0000000100;
+pub const SRLI: u32  = 0b0000000101;
+pub const SRAI: u32  = 0b0100000101;
+pub const ORI: u32   = 0b0000000110;
+pub const ANDI: u32  = 0b0000000111;
 
 pub const ADD: u32  = 0b0000000000;
 pub const SUB: u32  = 0b0100000000;
