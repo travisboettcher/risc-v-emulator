@@ -23,10 +23,3 @@ impl MixedIntegerOps for usize {
         }
     }
 }
-
-pub fn concat(bytes: &[u32; 4]) -> u32 {
-    ((bytes[0]) <<  0) +
-        ((bytes[1]) <<  8) +
-        ((bytes[2]) << 16) +
-        ((bytes[3]) << 24)
-}

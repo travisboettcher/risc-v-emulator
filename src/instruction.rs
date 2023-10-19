@@ -194,27 +194,32 @@ impl Instruction {
                             LB => {
                                 let m = register.get(rs1) as i32;
                                 let offset = imm as i32;
-                                register.put(rd, memory[(m + offset) as usize] as i8 as u32)
+                                let i = m + offset;
+                                register.put(rd, memory[i as usize] as i8 as u32)
                             },
                             LH => {
                                 let m = register.get(rs1) as i32;
                                 let offset = imm as i32;
-                                register.put(rd, memory[(m + offset) as usize] as i16 as u32)
+                                let i = m + offset;
+                                register.put(rd, memory[i as usize] as i16 as u32)
                             },
                             LW => {
                                 let m = register.get(rs1) as i32;
                                 let offset = imm as i32;
-                                register.put(rd, memory[(m + offset) as usize] as i32 as u32)
+                                let i = m + offset;
+                                register.put(rd, memory[i as usize] as i32 as u32)
                             },
                             LBU => {
                                 let m = register.get(rs1) as i32;
                                 let offset = imm as i32;
-                                register.put(rd, memory[(m + offset) as usize] as u8 as u32)
+                                let i = m + offset;
+                                register.put(rd, memory[i as usize] as u8 as u32)
                             },
                             LHU => {
                                 let m = register.get(rs1) as i32;
                                 let offset = imm as i32;
-                                register.put(rd, memory[(m + offset) as usize] as u16 as u32)
+                                let i = m + offset;
+                                register.put(rd, memory[i as usize] as u16 as u32)
                             },
                             _ => return
                         }
@@ -301,7 +306,9 @@ impl Instruction {
             JFormatInstruction { imm, rd, opcode } =>
                 match opcode {
                     JAL => {
-                        register.put(rd, register.pc() as u32 + 4);
+                        if rd > 0 {
+                            register.put(rd, register.pc() as u32 + 4);
+                        }
                         register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), imm));
                     },
                     _ => return
@@ -366,6 +373,12 @@ impl Instruction {
         let funct3 = bits >> 12 & 0b111;
         let rs1 = (bits >> 15 & 0b11111) as usize;
         let imm = (bits >> 20) as i16;
+        let imm = if (imm >> 11) == 1 {
+            imm + (-1 << 12)
+        } else {
+            imm
+        };
+
         IFormatInstruction {
             imm,
             rs1,
@@ -405,6 +418,12 @@ impl Instruction {
         let opcode = bits & 0b1111111;
         let rd = (bits >> 7 & 0b11111) as usize;
         let imm = (bits >> 12) as i32;
+        let imm = if (imm >> 19) == 1 {
+            imm + (-1 << 20)
+        } else {
+            imm
+        };
+
         JFormatInstruction {
             imm,
             rd,
@@ -413,10 +432,20 @@ impl Instruction {
     }
 
     fn parse_bformat(bits: u32) -> Instruction {
-        let imm = ((bits >> 7 & 0b11111) + (bits >> 25)) as i32;
+        let imm = ((bits >> 8 & 0b1111) << 1)
+            + ((bits >> 25 & 0b111111) << 5)
+            + ((bits >> 7 & 0b1) << 11)
+            + ((bits >> 31 & 0b1) << 12);
         let rs1 = (bits >> 15 & 0b11111) as usize;
         let rs2 = (bits >> 20 & 0b11111) as usize;
         let funct3 = (bits >> 12 & 0b111) as u32;
+
+        let imm: i32 = if (imm >> 12) == 1 {
+            imm as i32 + (-1 << 13)
+        } else {
+            imm as i32
+        };
+
         BFormatInstruction {
             imm,
             rs1,
@@ -426,10 +455,17 @@ impl Instruction {
     }
 
     fn parse_sformat(bits: u32) -> Instruction {
-        let imm = ((bits >> 7 & 0b11111) + (bits >> 25)) as i32;
+        let imm = ((bits >> 7) & 0b11111) + ((bits >> 25) << 5);
         let rs1 = (bits >> 15 & 0b11111) as usize;
         let rs2 = (bits >> 20 & 0b11111) as usize;
         let funct3 = (bits >> 12 & 0b111) as u32;
+
+        let imm: i32 = if (imm >> 11) == 1 {
+            imm as i32 + (-1 << 12)
+        } else {
+            imm as i32
+        };
+
         SFormatInstruction {
             imm,
             rs1,

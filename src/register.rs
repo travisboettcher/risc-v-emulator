@@ -1,23 +1,23 @@
 #[derive(Debug)]
 pub struct Register {
-    x: [u32; 32],
-    pc: usize
+    _x: [u32; 32],
+    _pc: usize
 }
 
 impl Register {
     pub fn new() -> Register {
         Register {
-            x: [0; 32],
-            pc: 0
+            _x: [0; 32],
+            _pc: 0
         }
     }
 
     pub fn pc(&self) -> usize {
-        self.pc
+        self._pc
     }
 
     pub fn update_pc(&mut self, pc: usize) {
-        self.pc = pc;
+        self._pc = pc;
     }
 
     pub fn put(&mut self, index: usize, value: u32) {
@@ -29,7 +29,7 @@ impl Register {
             panic!("The register only has a length of 32, tried to modify index {}", index)
         }
 
-        self.x[index] = value;
+        self._x[index] = value;
     }
 
     pub fn get(&self, index: usize) -> u32 {
@@ -37,6 +37,6 @@ impl Register {
             panic!("The register only has a length of 32, tried to access index {}", index)
         }
 
-        self.x[index]
+        self._x[index]
     }
 }

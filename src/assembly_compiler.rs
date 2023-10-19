@@ -7,6 +7,15 @@ struct BOperation {
     offset: String
 }
 
+impl BOperation {
+    fn transform_imm(imm: u32) -> u32 {
+        (((imm >> 11) & 0b1) << 7)
+            + (((imm >> 1) & 0b1111) << 8)
+            + (((imm >> 5) & 0b111111) << 25)
+            + ((imm >> 12) << 31)
+    }
+}
+
 struct IOperation {
     instruction: String,
     source: String,
@@ -15,7 +24,6 @@ struct IOperation {
 }
 
 struct JOperation {
-    instruction: String,
     destination: String,
     immediate: String
 }
@@ -48,7 +56,7 @@ impl Operation for BOperation {
     fn compile(self) -> u32 {
         let rs1: u32 = self.source1.parse().unwrap();
         let rs2: u32 = self.source2.parse().unwrap();
-        let imm: u32 = self.offset.parse().unwrap();
+        let imm: i32 = self.offset.parse().unwrap();
         let op: u32 = match self.instruction.as_str() {
             "beq" => instruction::BEQ,
             "bne" => instruction::BNE,
@@ -56,24 +64,21 @@ impl Operation for BOperation {
             "bltu" => instruction::BLTU,
             "bge" => instruction::BGE,
             "bgeu" => instruction::BGEU,
-            _ => 0
+            _ => panic!("oops!")
         };
 
         instruction::BRANCH
-            + (((imm >> 11) & 0b1) << 7)
-            + (((imm >> 1) & 0b1111) << 8)
+            + BOperation::transform_imm(imm as u32)
             + (op << 12)
             + (rs1 << 15)
             + (rs2 << 20)
-            + (((imm >> 5) & 0b111111) << 25)
-            + ((imm >> 12) << 31)
     }
 }
 
 impl Operation for IOperation {
     fn compile(self) -> u32 {
         let rs1: u32 = self.source.parse().unwrap();
-        let imm: u32 = self.immediate.parse().unwrap();
+        let imm: i32 = self.immediate.parse().unwrap();
         let rd: u32 = self.destination.parse().unwrap();
         let op: u32 = match self.instruction.as_str() {
             "addi" => instruction::ADDI,
@@ -91,7 +96,7 @@ impl Operation for IOperation {
             "lhu" => instruction::LHU,
             "lb" => instruction::LB,
             "lbu" => instruction::LBU,
-            _ => 0
+            _ => panic!("oops!")
         };
 
         match self.instruction.as_str() {
@@ -99,21 +104,21 @@ impl Operation for IOperation {
                 instruction::JALR
                     + (rd << 7)
                     + (rs1 << 15)
-                    + (imm << 20)
+                    + (imm << 20) as u32
             },
             "lw"|"lh"|"lhu"|"lb"|"lbu" => {
                 instruction::LOAD
                     + (rd << 7)
                     + (op << 12)
                     + (rs1 << 15)
-                    + (imm << 20)
+                    + (imm << 20) as u32
             },
             _ => {
                 instruction::OP_IMM
                     + (rd << 7)
                     + ((op & 0b111) << 12)
                     + (rs1 << 15)
-                    + (imm << 20)
+                    + (imm << 20) as u32
                     + ((op >> 3) << 25)
             }
         }
@@ -123,10 +128,12 @@ impl Operation for IOperation {
 impl Operation for JOperation {
     fn compile(self) -> u32 {
         let rd: u32 = self.destination.parse().unwrap();
-        let imm: u32 = self.immediate.parse().unwrap();
+        let imm: i32 = self.immediate.parse().unwrap();
         let op = instruction::JAL;
 
-        op + (rd << 7) + (imm << 12)
+        op
+            + (rd << 7)
+            + ((imm as u32) << 12)
     }
 }
 
@@ -146,7 +153,7 @@ impl Operation for ROperation {
             "srl" => instruction::SRL,
             "sub" => instruction::SUB,
             "sra" => instruction::SRA,
-            _ => 0
+            _ => panic!("oops!")
         };
 
         instruction::OP
@@ -162,20 +169,20 @@ impl Operation for SOperation {
     fn compile(self) -> u32 {
         let rs1: u32 = self.base.parse().unwrap();
         let rs2: u32 = self.source.parse().unwrap();
-        let imm: u32 = self.offset.parse().unwrap();
+        let imm: i32 = self.offset.parse().unwrap();
         let width: u32 = match self.instruction.as_str() {
             "sw" => instruction::SW,
             "sh" => instruction::SH,
             "sb" => instruction::SB,
-            _ => 0
+            _ => panic!("oops!")
         };
 
         instruction::STORE
-            + ((imm & 0b11111) << 7)
+            + ((imm & 0b11111) << 7) as u32
             + (width << 12)
             + (rs1 << 15)
             + (rs2 << 20)
-            + (((imm >> 5) & 0b1111111) << 25)
+            + (((imm >> 5) & 0b1111111) << 25) as u32
     }
 }
 
@@ -186,7 +193,7 @@ impl Operation for UOperation {
         let op: u32 = match self.instruction.as_str() {
             "lui" => instruction::LUI,
             "auipc" => instruction::AUIPC,
-            _ => 0
+            _ => panic!("oops!")
         };
 
         op + (rd << 7) + (imm << 12)
@@ -253,16 +260,16 @@ fn compile_line(instruction: &str) -> u32 {
         token if R_OPS.contains(&token) => {
             ROperation {
                 instruction: token.to_owned(),
-                destination: parse_register(tokens[1]),
-                source1: parse_register(tokens[2]),
-                source2: parse_register(tokens[3]),
+                destination: parse_register(tokens[1]).to_owned(),
+                source1: parse_register(tokens[2]).to_owned(),
+                source2: parse_register(tokens[3]).to_owned(),
             }.compile()
         },
         token if I_OPS.contains(&token) => {
             IOperation {
                 instruction: token.to_owned(),
-                destination: parse_register(tokens[1]),
-                source: parse_register(tokens[2]),
+                destination: parse_register(tokens[1]).to_owned(),
+                source: parse_register(tokens[2]).to_owned(),
                 immediate: tokens[3].to_owned(),
             }.compile()
         },
@@ -270,30 +277,29 @@ fn compile_line(instruction: &str) -> u32 {
             let (offset, base) = parse_base_and_offset(tokens[2]);
             IOperation {
                 instruction: token.to_owned(),
-                destination: parse_register(tokens[1]),
-                source: parse_register(base),
+                destination: parse_register(tokens[1]).to_owned(),
+                source: parse_register(base).to_owned(),
                 immediate: offset.to_owned(),
             }.compile()
         },
         token if U_OPS.contains(&token) => {
             UOperation {
                 instruction: token.to_owned(),
-                destination: parse_register(tokens[1]),
+                destination: parse_register(tokens[1]).to_owned(),
                 immediate: tokens[2].to_owned()
             }.compile()
         },
         "jal" => {
             JOperation {
-                instruction: tokens[0].to_owned(),
-                destination: parse_register(tokens[1]),
+                destination: parse_register(tokens[1]).to_owned(),
                 immediate: tokens[2].to_owned()
             }.compile()
         },
         token if B_OPS.contains(&token) => {
             BOperation {
                 instruction: token.to_owned(),
-                source1: parse_register(tokens[1]),
-                source2: parse_register(tokens[2]),
+                source1: parse_register(tokens[1]).to_owned(),
+                source2: parse_register(tokens[2]).to_owned(),
                 offset: tokens[3].to_owned()
             }.compile()
         },
@@ -301,20 +307,52 @@ fn compile_line(instruction: &str) -> u32 {
             let (offset, base) = parse_base_and_offset(tokens[2]);
             SOperation {
                 instruction: token.to_owned(),
-                source: parse_register(tokens[1]),
-                base: parse_register(base),
+                source: parse_register(tokens[1]).to_owned(),
+                base: parse_register(base).to_owned(),
                 offset: offset.to_owned()
             }.compile()
         },
-        _ => 0
+        _ => panic!("oops! token not found: {}", tokens[0])
     }
 }
 
-fn parse_register(token: &str) -> String {
-    token
-        .trim_start_matches(['x', 't'])
-        .trim_end_matches(",")
-        .to_owned()
+fn parse_register(token: &str) -> &str {
+    match token.trim_end_matches(',') {
+        t if t.starts_with('x') => t.trim_start_matches('x'),
+        "zero" => "0",
+        "ra" => "1",
+        "sp" => "2",
+        "gp" => "3",
+        "tp" => "4",
+        "t0" => "5",
+        "t1" => "6",
+        "t2" => "7",
+        "s0" | "fp" => "8",
+        "s1" => "9",
+        "a0" => "10",
+        "a1" => "11",
+        "a2" => "12",
+        "a3" => "13",
+        "a4" => "14",
+        "a5" => "15",
+        "a6" => "16",
+        "a7" => "17",
+        "s2" => "18",
+        "s3" => "19",
+        "s4" => "20",
+        "s5" => "21",
+        "s6" => "22",
+        "s7" => "23",
+        "s8" => "24",
+        "s9" => "25",
+        "s10" => "26",
+        "s11" => "27",
+        "t3" => "28",
+        "t4" => "29",
+        "t5" => "30",
+        "t6" => "31",
+        _ => panic!("oops!")
+    }
 }
 
 fn parse_base_and_offset(token: &str) -> (&str, &str) {
@@ -323,16 +361,69 @@ fn parse_base_and_offset(token: &str) -> (&str, &str) {
         .unwrap()
 }
 
-pub fn compile(instructions: Vec<&str>) -> Vec<u32> {
+fn pseudo_to_base_instructions(instruction: &str) -> Option<Vec<String>> {
+    let tokens = instruction.split_whitespace().collect::<Vec<_>>();
+    match tokens[0] {
+        "nop" => Some(vec![
+            String::from("addi x0, x0, 0")
+        ]),
+        "li" => Some(vec![
+            format!("addi {rd}, x0, {imm}", rd=tokens[1], imm=tokens[2])
+        ]),
+        "mv" => Some(vec![
+            format!("addi {rd}, {rs}, 0", rd=tokens[1], rs=tokens[2])
+        ]),
+        "not" => Some(vec![
+            format!("xori {rd}, {rs}, -1", rd=tokens[1], rs=tokens[2])
+        ]),
+        "neg" => Some(vec![
+            format!("sub {rd}, x0, {rs}", rd=tokens[1], rs=tokens[2])
+        ]),
+        "seqz" => Some(vec![
+            format!("sltiu {rd}, {rs}, 1", rd=tokens[1], rs=tokens[2])
+        ]),
+        "snez" => Some(vec![
+            format!("sltu {rd}, x0, {rs}", rd=tokens[1], rs=tokens[2])
+        ]),
+        "sltz" => Some(vec![
+            format!("slt {rd}, {rs}, x0", rd=tokens[1], rs=tokens[2])
+        ]),
+        "sqtz" => Some(vec![
+            format!("slt {rd}, x0, {rs}", rd=tokens[1], rs=tokens[2])
+        ]),
+        "beqz" => Some(vec![
+            format!("beq {rs}, x0, {offset}", rs=tokens[1], offset=tokens[2])
+        ]),
+        "bnez" => Some(vec![
+            format!("bne {rs}, x0, {offset}", rs=tokens[1], offset=tokens[2])
+        ]),
+        "ble" => Some(vec![
+            format!("bge {rt}, {rs}, {offset}", rt=tokens[2], rs=tokens[1], offset=tokens[3])
+        ]),
+        "j" => Some(vec![
+            format!("jal x0, {offset}", offset=tokens[1])
+        ]),
+        "ret" => Some(vec![
+            String::from("jalr x0, x1, 0")
+        ]),
+        _ => None
+    }
+}
+
+pub fn compile(instructions: Vec<String>) -> Vec<u32> {
     return instructions
         .iter()
-        .map(|instruction: &&str| compile_line(instruction))
+        .flat_map(|instruction| {
+            pseudo_to_base_instructions(instruction)
+                .unwrap_or(vec![instruction.to_string()])
+        })
+        .map(|instruction: String| compile_line(&instruction))
         .collect();
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::assembly_compiler::compile_line;
+    use crate::assembly_compiler::{compile, compile_line};
 
     #[test]
     fn test_compile_add() {
@@ -439,7 +530,7 @@ mod tests {
 
         let op = compile_line(instruction);
 
-        assert_eq!(op, 0b000000000000_00011_010_00010_0000011)
+        assert_eq!(op, 0b000000000000_11100_010_00111_0000011)
     }
 
     #[test]
@@ -448,7 +539,7 @@ mod tests {
 
         let op = compile_line(instruction);
 
-        assert_eq!(op, 0b000000000000_00011_100_00010_0000011)
+        assert_eq!(op, 0b000000000000_11100_100_00111_0000011)
     }
 
     #[test]
@@ -457,7 +548,16 @@ mod tests {
 
         let op = compile_line(instruction);
 
-        assert_eq!(op, 0b0000000_00010_00011_010_00000_0100011)
+        assert_eq!(op, 0b0000000_00111_11100_010_00000_0100011)
+    }
+
+    #[test]
+    fn test_compile_beqz() {
+        let instruction = "beqz t2, 6".to_string();
+
+        let ops = compile(vec![instruction]);
+
+        assert_eq!(ops, vec![0b0_000000_00000_00111_000_0011_0_1100011])
     }
 
 }
