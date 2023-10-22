@@ -6,6 +6,7 @@ use Instruction::{
     JFormatInstruction,
     SFormatInstruction
 };
+use crate::immediates::{BImmediate, IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
 use crate::register::Register;
 use crate::math_utils::MixedIntegerOps;
 
@@ -372,12 +373,8 @@ impl Instruction {
         let rd = (bits >> 7 & 0b11111) as usize;
         let funct3 = bits >> 12 & 0b111;
         let rs1 = (bits >> 15 & 0b11111) as usize;
-        let imm = (bits >> 20) as i16;
-        let imm = if (imm >> 11) == 1 {
-            imm + (-1 << 12)
-        } else {
-            imm
-        };
+        let imm: u32 = IImmediate::from_instruction(bits).into();
+        let imm = imm as i16;
 
         IFormatInstruction {
             imm,
@@ -406,7 +403,8 @@ impl Instruction {
     fn parse_uformat(bits: u32) -> Instruction {
         let opcode = bits & 0b1111111;
         let rd = (bits >> 7 & 0b11111) as usize;
-        let imm = (bits >> 12) as i32;
+        let imm: u32 = UImmediate::from_instruction(bits).into();
+        let imm = imm as i32;
         UFormatInstruction {
             imm,
             rd,
@@ -417,12 +415,8 @@ impl Instruction {
     fn parse_jformat(bits: u32) -> Instruction {
         let opcode = bits & 0b1111111;
         let rd = (bits >> 7 & 0b11111) as usize;
-        let imm = (bits >> 12) as i32;
-        let imm = if (imm >> 19) == 1 {
-            imm + (-1 << 20)
-        } else {
-            imm
-        };
+        let imm: u32 = JImmediate::from_instruction(bits).into();
+        let imm = imm as i32;
 
         JFormatInstruction {
             imm,
@@ -432,19 +426,11 @@ impl Instruction {
     }
 
     fn parse_bformat(bits: u32) -> Instruction {
-        let imm = ((bits >> 8 & 0b1111) << 1)
-            + ((bits >> 25 & 0b111111) << 5)
-            + ((bits >> 7 & 0b1) << 11)
-            + ((bits >> 31 & 0b1) << 12);
         let rs1 = (bits >> 15 & 0b11111) as usize;
         let rs2 = (bits >> 20 & 0b11111) as usize;
         let funct3 = (bits >> 12 & 0b111) as u32;
-
-        let imm: i32 = if (imm >> 12) == 1 {
-            imm as i32 + (-1 << 13)
-        } else {
-            imm as i32
-        };
+        let imm: u32 = BImmediate::from_instruction(bits).into();
+        let imm = imm as i32;
 
         BFormatInstruction {
             imm,
@@ -455,16 +441,12 @@ impl Instruction {
     }
 
     fn parse_sformat(bits: u32) -> Instruction {
-        let imm = ((bits >> 7) & 0b11111) + ((bits >> 25) << 5);
         let rs1 = (bits >> 15 & 0b11111) as usize;
         let rs2 = (bits >> 20 & 0b11111) as usize;
         let funct3 = (bits >> 12 & 0b111) as u32;
 
-        let imm: i32 = if (imm >> 11) == 1 {
-            imm as i32 + (-1 << 12)
-        } else {
-            imm as i32
-        };
+        let imm: u32 = SImmediate::from_instruction(bits).into();
+        let imm = imm as i32;
 
         SFormatInstruction {
             imm,

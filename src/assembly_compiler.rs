@@ -1,19 +1,12 @@
 use crate::instruction;
+use crate::immediates::{IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
+use crate::immediates::BImmediate;
 
 struct BOperation {
     instruction: String,
     source1: String,
     source2: String,
     offset: String
-}
-
-impl BOperation {
-    fn transform_imm(imm: u32) -> u32 {
-        (((imm >> 11) & 0b1) << 7)
-            + (((imm >> 1) & 0b1111) << 8)
-            + (((imm >> 5) & 0b111111) << 25)
-            + ((imm >> 12) << 31)
-    }
 }
 
 struct IOperation {
@@ -68,7 +61,7 @@ impl Operation for BOperation {
         };
 
         instruction::BRANCH
-            + BOperation::transform_imm(imm as u32)
+            + BImmediate::from(imm as u32).to_instruction_bitmask()
             + (op << 12)
             + (rs1 << 15)
             + (rs2 << 20)
@@ -99,26 +92,28 @@ impl Operation for IOperation {
             _ => panic!("oops!")
         };
 
+        let imm = IImmediate::from(imm as u32);
+
         match self.instruction.as_str() {
             "jalr" => {
                 instruction::JALR
                     + (rd << 7)
                     + (rs1 << 15)
-                    + (imm << 20) as u32
+                    + imm.to_instruction_bitmask()
             },
             "lw"|"lh"|"lhu"|"lb"|"lbu" => {
                 instruction::LOAD
                     + (rd << 7)
                     + (op << 12)
                     + (rs1 << 15)
-                    + (imm << 20) as u32
+                    + imm.to_instruction_bitmask()
             },
             _ => {
                 instruction::OP_IMM
                     + (rd << 7)
                     + ((op & 0b111) << 12)
                     + (rs1 << 15)
-                    + (imm << 20) as u32
+                    + imm.to_instruction_bitmask()
                     + ((op >> 3) << 25)
             }
         }
@@ -133,7 +128,7 @@ impl Operation for JOperation {
 
         op
             + (rd << 7)
-            + ((imm as u32) << 12)
+            + JImmediate::from(imm as u32).to_instruction_bitmask()
     }
 }
 
@@ -178,11 +173,10 @@ impl Operation for SOperation {
         };
 
         instruction::STORE
-            + ((imm & 0b11111) << 7) as u32
+            + SImmediate::from(imm as u32).to_instruction_bitmask()
             + (width << 12)
             + (rs1 << 15)
             + (rs2 << 20)
-            + (((imm >> 5) & 0b1111111) << 25) as u32
     }
 }
 
@@ -196,7 +190,7 @@ impl Operation for UOperation {
             _ => panic!("oops!")
         };
 
-        op + (rd << 7) + (imm << 12)
+        op + (rd << 7) + UImmediate::from(imm << 12).to_instruction_bitmask()
     }
 }
 
@@ -484,7 +478,7 @@ mod tests {
         let instruction = "lui x5, 1234";
 
         let op = compile_line(instruction);
-
+        println!("{:0>32b}", op);
         assert_eq!(op, 0b00000000010011010010_00101_0110111)
     }
 
@@ -494,7 +488,8 @@ mod tests {
 
         let op = compile_line(instruction);
 
-        assert_eq!(op, 0b00000000010011010010_00101_1101111)
+        println!("{:0>32b}", op);
+        assert_eq!(op, 0b01001101001000000000001011101111)
     }
 
     #[test]
