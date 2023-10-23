@@ -405,6 +405,9 @@ fn pseudo_to_base_instructions(instruction: &str) -> Option<Vec<String>> {
         "bnez" => Some(vec![
             format!("bne {rs}, x0, {offset}", rs=tokens[1], offset=tokens[2])
         ]),
+        "bgt" => Some(vec![
+            format!("blt {rt}, {rs}, {offset}", rt=tokens[2], rs=tokens[1], offset=tokens[3])
+        ]),
         "ble" => Some(vec![
             format!("bge {rt}, {rs}, {offset}", rt=tokens[2], rs=tokens[1], offset=tokens[3])
         ]),
