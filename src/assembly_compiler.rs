@@ -2,6 +2,7 @@ use crate::instruction;
 use crate::immediates::{IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
 use crate::immediates::BImmediate;
 
+#[derive(Debug)]
 struct BOperation {
     instruction: String,
     source1: String,
@@ -9,6 +10,7 @@ struct BOperation {
     offset: String
 }
 
+#[derive(Debug)]
 struct IOperation {
     instruction: String,
     source: String,
@@ -16,11 +18,13 @@ struct IOperation {
     destination: String
 }
 
+#[derive(Debug)]
 struct JOperation {
     destination: String,
     immediate: String
 }
 
+#[derive(Debug)]
 struct ROperation {
     instruction: String,
     source1: String,
@@ -28,6 +32,7 @@ struct ROperation {
     destination: String
 }
 
+#[derive(Debug)]
 struct SOperation {
     instruction: String,
     base: String,
@@ -35,6 +40,7 @@ struct SOperation {
     offset: String
 }
 
+#[derive(Debug)]
 struct UOperation {
     instruction: String,
     destination: String,
@@ -47,6 +53,7 @@ trait Operation {
 
 impl Operation for BOperation {
     fn compile(self) -> u32 {
+        println!("[compiling] {:?}", self);
         let rs1: u32 = self.source1.parse().unwrap();
         let rs2: u32 = self.source2.parse().unwrap();
         let imm: i32 = self.offset.parse().unwrap();
@@ -70,6 +77,7 @@ impl Operation for BOperation {
 
 impl Operation for IOperation {
     fn compile(self) -> u32 {
+        println!("[compiling] {:?}", self);
         let rs1: u32 = self.source.parse().unwrap();
         let imm: i32 = self.immediate.parse().unwrap();
         let rd: u32 = self.destination.parse().unwrap();
@@ -122,6 +130,7 @@ impl Operation for IOperation {
 
 impl Operation for JOperation {
     fn compile(self) -> u32 {
+        println!("[compiling] {:?}", self);
         let rd: u32 = self.destination.parse().unwrap();
         let imm: i32 = self.immediate.parse().unwrap();
         let op = instruction::JAL;
@@ -134,6 +143,7 @@ impl Operation for JOperation {
 
 impl Operation for ROperation {
     fn compile(self) -> u32 {
+        println!("[compiling] {:?}", self);
         let rs1: u32 = self.source1.parse().unwrap();
         let rs2: u32 = self.source2.parse().unwrap();
         let rd: u32 = self.destination.parse().unwrap();
@@ -162,6 +172,7 @@ impl Operation for ROperation {
 
 impl Operation for SOperation {
     fn compile(self) -> u32 {
+        println!("[compiling] {:?}", self);
         let rs1: u32 = self.base.parse().unwrap();
         let rs2: u32 = self.source.parse().unwrap();
         let imm: i32 = self.offset.parse().unwrap();
@@ -182,6 +193,7 @@ impl Operation for SOperation {
 
 impl Operation for UOperation {
     fn compile(self) -> u32 {
+        println!("[compiling] {:?}", self);
         let rd: u32 = self.destination.parse().unwrap();
         let imm: u32 = self.immediate.parse().unwrap();
         let op: u32 = match self.instruction.as_str() {
@@ -356,7 +368,9 @@ fn parse_base_and_offset(token: &str) -> (&str, &str) {
 }
 
 fn pseudo_to_base_instructions(instruction: &str) -> Option<Vec<String>> {
-    let tokens = instruction.split_whitespace().collect::<Vec<_>>();
+    let tokens = instruction.split_whitespace()
+        .map(|t| t.trim_end_matches(','))
+        .collect::<Vec<_>>();
     match tokens[0] {
         "nop" => Some(vec![
             String::from("addi x0, x0, 0")
@@ -400,6 +414,14 @@ fn pseudo_to_base_instructions(instruction: &str) -> Option<Vec<String>> {
         "ret" => Some(vec![
             String::from("jalr x0, x1, 0")
         ]),
+        "call" => {
+            let msb = tokens[1].parse::<u32>().unwrap() >> 12;
+            let lsb = tokens[1].parse::<u32>().unwrap() & 0b111111111111;
+            Some(vec![
+                format!("auipc x6, {offset}", offset=msb),
+                format!("jalr x1, x6, {offset}", offset=(lsb))
+            ])
+        },
         _ => None
     }
 }
@@ -411,7 +433,12 @@ pub fn compile(instructions: Vec<String>) -> Vec<u32> {
             pseudo_to_base_instructions(instruction)
                 .unwrap_or(vec![instruction.to_string()])
         })
-        .map(|instruction: String| compile_line(&instruction))
+        .map(|instruction: String| {
+            println!("[compiling] Instruction: '{}'", instruction);
+            let binary = compile_line(&instruction);
+            println!("[compiling] Output: '{:0>32b}'", binary);
+            binary
+        })
         .collect();
 }
 
@@ -553,6 +580,18 @@ mod tests {
         let ops = compile(vec![instruction]);
 
         assert_eq!(ops, vec![0b0_000000_00000_00111_000_0011_0_1100011])
+    }
+
+    #[test]
+    fn test_compile_call() {
+        let instruction = "call 123456789".to_string();
+
+        let ops = compile(vec![instruction]);
+
+        assert_eq!(ops, vec![
+            0b00000111010110111100_00110_0010111,
+            0b110100010101_00110_000_00001_1100111
+        ])
     }
 
 }

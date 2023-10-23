@@ -2,8 +2,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::ops::Range;
 use crate::assembly_compiler;
-use crate::instruction::Instruction;
+use crate::instruction::{Instruction, JALR};
 use crate::register::Register;
+
+const SP: usize = 2;
 
 pub struct Processor {
     register: Register,
@@ -13,11 +15,15 @@ pub struct Processor {
 
 impl Processor {
     pub fn new() -> Processor {
-        Processor {
+        let mut proc = Processor {
             register: Register::new(),
             memory: [0u32; 1024],
             instruction_index: (0, 0)
-        }
+        };
+
+        // Initialize stack pointer to memory address 256
+        proc.set_register_value(SP, 256);
+        proc
     }
 
     pub fn load_instructions(&mut self, file_path: &str) -> (usize, usize) {
@@ -38,20 +44,10 @@ impl Processor {
     }
 
     /// Copies the slice into memory
-    ///
-    /// Uses a dumb algorithm to search for
-    /// a segment of memory wide enough to hold the
-    /// entire slice
     pub fn load_into_memory(&mut self, src: &[u32]) -> usize {
         let len = src.len();
-        let mut i = 0;
-        while !self.memory[i..i + len].iter().all(|&m| m == 0) {
-            i = i + len;
-        }
-
-        self.memory[i..i + len].copy_from_slice(src);
-
-        i
+        self.memory[512..512 + len].copy_from_slice(src);
+        512
     }
 
     pub fn set_register_value(&mut self, index: usize, value: u32) {
@@ -59,14 +55,24 @@ impl Processor {
     }
 
     pub fn execute_instructions(&mut self) {
+        println!("--------------------------");
         while self.register.pc() / 4 < self.instruction_index.1 {
-            let instruction = Instruction::from(self.memory[self.register.pc() / 4]).unwrap();
-            println!("{:?}", instruction);
+            let binary = self.memory[self.register.pc() / 4];
+            println!("[executing] Input: {:0>32b}", binary);
+            let instruction = Instruction::from(binary).unwrap();
+            println!("[executing] Instruction: {:?}", instruction);
+
+            if let Instruction::IFormatInstruction { opcode, rd, rs1, ..} = instruction {
+                if opcode == JALR && rd == 0 && rs1 == 1 && self.register.get(rs1) == 0 {
+                    break;
+                }
+            }
 
             self.register.update_pc(self.register.pc() + 4);
 
             instruction.execute(&mut self.register, &mut self.memory);
-            println!("{:?}", self.register);
+            println!("[executing] Register: {:?}", self.register);
+            println!("--------------------------");
         }
     }
 

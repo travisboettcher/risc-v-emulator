@@ -184,7 +184,7 @@ impl Instruction {
                         }
                     },
                     JALR => {
-                        let t = register.pc() + 4;
+                        let t = register.pc();
                         register.update_pc((register.get(rs1) as i32 + imm as i32) as usize);
                         if rd != 0 {
                             register.put(rd, t as u32);

@@ -44,5 +44,20 @@ mod tests {
         let result = processor.get_copy_of_memory(a0..a0 + 5);
         assert_eq!(vec![1, 2, 3, 4, 5], result);
     }
+
+    #[test]
+    fn test_strrev() {
+        let mut processor = Processor::new();
+
+        processor.load_instructions("examples/strrev.s");
+        let bits: Vec<u32> = "hello\0".chars().map(|c| c as u32).collect();
+        let a0 = processor.load_into_memory(bits.as_slice());
+        processor.set_register_value(10, a0 as u32);
+        processor.execute_instructions();
+
+        let result = processor.get_copy_of_memory(a0..a0 + 5);
+        let expected: Vec<u32> = "olleh".chars().map(|c| c as u32).collect();
+        assert_eq!(expected, result);
+    }
 }
 
