@@ -1,11 +1,3 @@
-use Instruction::{
-    BFormatInstruction,
-    IFormatInstruction,
-    RFormatInstruction,
-    UFormatInstruction,
-    JFormatInstruction,
-    SFormatInstruction
-};
 use crate::immediates::{BImmediate, IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
 use crate::register::Register;
 use crate::math_utils::MixedIntegerOps;
@@ -63,312 +55,127 @@ pub const SW: u32 = 0b010;
 
 type Memory = [u32; 1024];
 
-#[derive(Debug)]
-pub enum Instruction {
-    IFormatInstruction {
-        imm: i16,
-        rs1: usize,
-        funct3: u32,
-        rd: usize,
-        opcode: u32
-    },
-    JFormatInstruction {
-        imm: i32,
-        rd: usize,
-        opcode: u32
-    },
-    RFormatInstruction {
-        rd: usize,
-        funct3: u32,
-        rs1: usize,
-        rs2: usize,
-        funct7: u32
-    },
-    UFormatInstruction {
-        imm: i32,
-        rd: usize,
-        opcode: u32
-    },
-    BFormatInstruction {
-        imm: i32,
-        rs1: usize,
-        rs2: usize,
-        funct3: u32
-    },
-    SFormatInstruction {
-        imm: i32,
-        rs1: usize,
-        rs2: usize,
-        funct3: u32
-    }
+pub trait Instruction {
+    fn execute(self, register: &mut Register, memory: &mut Memory);
+    fn parse(bits: u32) -> InstructionEnum;
 }
 
-// Implement SCALL/SBREAK/CSRR* with a single SYSTEM instruction that always traps
-// Implement FENCE and FENCE.I as NOPs
+#[derive(Debug)]
+pub struct IFormatInstruction {
+    imm: i16,
+    rs1: usize,
+    funct3: u32,
+    rd: usize,
+    opcode: u32
+}
 
-impl Instruction {
-    pub fn from(bits: u32) -> Option<Instruction> {
-        let opcode_mask = 0b1111111;
-        let opcode = bits & opcode_mask;
-        match opcode {
-            OP_IMM | JALR | LOAD => Some(Instruction::parse_iformat(bits)),
-            OP => Some(Instruction::parse_rformat(bits)),
-            LUI | AUIPC => Some(Instruction::parse_uformat(bits)),
-            JAL => Some(Instruction::parse_jformat(bits)),
-            BRANCH => Some(Instruction::parse_bformat(bits)),
-            STORE => Some(Instruction::parse_sformat(bits)),
-            FENCE => todo!(),
-            _ => None
-        }
-    }
-
-    pub fn execute(self, register: &mut Register, memory: &mut Memory) {
-        match self {
-            IFormatInstruction { funct3, rd, rs1, imm, opcode } =>
-                match opcode {
-                    OP_IMM => {
-                        match funct3 {
-                            ADDI => { // Addi
-                                let i = register.get(rs1);
-                                register.put(rd, MixedIntegerOps::wrapping_add_signed(i, imm as i32));
-                            },
-                            SLLI => { // Slli
-                                register.put(rd, register.get(rs1) << imm)
-                            },
-                            SLTI => { // Slti
-                                let i = register.get(rs1) as i32;
-                                if i < (imm as i32) {
-                                    register.put(rd, 1);
-                                } else {
-                                    register.put(rd, 0);
-                                }
-                            },
-                            SLTIU => { // Sltiu
-                                let i = register.get(rs1);
-                                if i < (imm as u32) {
-                                    register.put(rd, 1);
-                                } else {
-                                    register.put(rd, 0);
-                                }
-                            },
-                            XORI => { // Xori
-                                let i = register.get(rs1);
-                                register.put(rd, i ^ (imm as u32));
-                            },
-                            SRLI => { // Srli and Srai
-                                // need to discriminate between srli and srai
-                                let discriminator = imm >> 10;
-                                match discriminator {
-                                    0b00 => {
-                                        let shift = imm & 0b11111;
-                                        let i = register.get(rs1);
-                                        register.put(rd, i >> shift);
-                                    },
-                                    0b01 => {
-                                        let shift = imm & 0b11111;
-                                        let i = register.get(rs1) as i32;
-                                        register.put(rd, (i >> shift) as u32);
-                                    },
-                                    _ => panic!()
-                                }
-                            }
-                            ORI => { // Ori
-                                let i = register.get(rs1);
-                                register.put(rd, i | (imm as u32));
-                            },
-                            ANDI => { // Andi
-                                let i = register.get(rs1);
-                                register.put(rd, i & (imm as u32));
-                            },
-                            _ => return
-                        }
+impl Instruction for IFormatInstruction {
+    fn execute(self, register: &mut Register, memory: &mut Memory) {
+        match self.opcode {
+            OP_IMM => {
+                match self.funct3 {
+                    ADDI => { // Addi
+                        let i = register.get(self.rs1);
+                        register.put(self.rd, MixedIntegerOps::wrapping_add_signed(i, self.imm as i32));
                     },
-                    JALR => {
-                        let t = register.pc();
-                        register.update_pc((register.get(rs1) as i32 + imm as i32) as usize);
-                        if rd != 0 {
-                            register.put(rd, t as u32);
-                        }
+                    SLLI => { // Slli
+                        register.put(self.rd, register.get(self.rs1) << self.imm)
                     },
-                    LOAD => {
-                        match funct3 {
-                            LB => {
-                                let m = register.get(rs1) as i32;
-                                let offset = imm as i32;
-                                let i = m + offset;
-                                register.put(rd, memory[i as usize] as i8 as u32)
-                            },
-                            LH => {
-                                let m = register.get(rs1) as i32;
-                                let offset = imm as i32;
-                                let i = m + offset;
-                                register.put(rd, memory[i as usize] as i16 as u32)
-                            },
-                            LW => {
-                                let m = register.get(rs1) as i32;
-                                let offset = imm as i32;
-                                let i = m + offset;
-                                register.put(rd, memory[i as usize] as i32 as u32)
-                            },
-                            LBU => {
-                                let m = register.get(rs1) as i32;
-                                let offset = imm as i32;
-                                let i = m + offset;
-                                register.put(rd, memory[i as usize] as u8 as u32)
-                            },
-                            LHU => {
-                                let m = register.get(rs1) as i32;
-                                let offset = imm as i32;
-                                let i = m + offset;
-                                register.put(rd, memory[i as usize] as u16 as u32)
-                            },
-                            _ => return
-                        }
-                    },
-                    _ => return
-                },
-            RFormatInstruction { funct3, funct7, rs1, rs2, rd } => {
-                let funct = (funct7 << 3) + funct3;
-                match funct {
-                    ADD => { // Add
-                        let i = register.get(rs1);
-                        let j = register.get(rs2);
-                        register.put(rd, i + j);
-                    },
-                    SUB => {
-                        let i = register.get(rs1);
-                        let j = register.get(rs2);
-                        register.put(rd, i - j);
-                    },
-                    SLL => {
-                        let i = register.get(rs1);
-                        let j = register.get(rs2) & 0b11111;
-                        register.put(rd, i << j)
-                    },
-                    SLT => {
-                        let i = register.get(rs1) as i32;
-                        let j = register.get(rs2) as i32;
-
-                        if i < j {
-                            register.put(rd, 1);
+                    SLTI => { // Slti
+                        let i = register.get(self.rs1) as i32;
+                        if i < (self.imm as i32) {
+                            register.put(self.rd, 1);
                         } else {
-                            register.put(rd, 0);
+                            register.put(self.rd, 0);
                         }
                     },
-                    SLTU => {
-                        let i = register.get(rs1);
-                        let j = register.get(rs2);
-                        if i < j {
-                            register.put(rd, 1);
+                    SLTIU => { // Sltiu
+                        let i = register.get(self.rs1);
+                        if i < (self.imm as u32) {
+                            register.put(self.rd, 1);
                         } else {
-                            register.put(rd, 0);
+                            register.put(self.rd, 0);
                         }
                     },
-                    XOR => {
-                        let i = register.get(rs1);
-                        let j = register.get(rs2);
-                        register.put(rd, i ^ j);
+                    XORI => { // Xori
+                        let i = register.get(self.rs1);
+                        register.put(self.rd, i ^ (self.imm as u32));
                     },
-                    SRL => {
-                        let i = register.get(rs1);
-                        let j = register.get(rs2) & 0b11111;
-                        register.put(rd, i >> j);
-                    },
-                    SRA => {
-                        let i = register.get(rs1) as i32;
-                        let j = register.get(rs2) & 0b11111;
-                        register.put(rd, (i >> j) as u32);
-                    },
-                    OR => {
-                        let i = register.get(rs1);
-                        let j = register.get(rs2);
-                        register.put(rd, i | j);
-                    },
-                    AND => {
-                        let i = register.get(rs1);
-                        let j = register.get(rs2);
-                        println!("i: {}, j: {}, i & j: {}", i, j, i&j);
-                        register.put(rd, i & j);
+                    SRLI => { // Srli and Srai
+                        // need to discriminate between srli and srai
+                        let discriminator = self.imm >> 10;
+                        match discriminator {
+                            0b00 => {
+                                let shift = self.imm & 0b11111;
+                                let i = register.get(self.rs1);
+                                register.put(self.rd, i >> shift);
+                            },
+                            0b01 => {
+                                let shift = self.imm & 0b11111;
+                                let i = register.get(self.rs1) as i32;
+                                register.put(self.rd, (i >> shift) as u32);
+                            },
+                            _ => panic!()
+                        }
                     }
+                    ORI => { // Ori
+                        let i = register.get(self.rs1);
+                        register.put(self.rd, i | (self.imm as u32));
+                    },
+                    ANDI => { // Andi
+                        let i = register.get(self.rs1);
+                        register.put(self.rd, i & (self.imm as u32));
+                    },
                     _ => return
                 }
             },
-            UFormatInstruction { imm, rd, opcode } =>
-                match opcode {
-                    LUI => {
-                        register.put(rd, (imm as u32) << 12);
+            JALR => {
+                let t = register.pc();
+                register.update_pc((register.get(self.rs1) as i32 + self.imm as i32) as usize);
+                if self.rd != 0 {
+                    register.put(self.rd, t as u32);
+                }
+            },
+            LOAD => {
+                match self.funct3 {
+                    LB => {
+                        let m = register.get(self.rs1) as i32;
+                        let offset = self.imm as i32;
+                        let i = m + offset;
+                        register.put(self.rd, memory[i as usize] as i8 as u32)
                     },
-                    AUIPC => {
-                        let u_immediate = (imm as u32) << 12;
-                        register.put(rd, register.pc() as u32 + u_immediate);
+                    LH => {
+                        let m = register.get(self.rs1) as i32;
+                        let offset = self.imm as i32;
+                        let i = m + offset;
+                        register.put(self.rd, memory[i as usize] as i16 as u32)
                     },
-                    _ => return
-                },
-            JFormatInstruction { imm, rd, opcode } =>
-                match opcode {
-                    JAL => {
-                        if rd > 0 {
-                            register.put(rd, register.pc() as u32 + 4);
-                        }
-                        register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), imm));
+                    LW => {
+                        let m = register.get(self.rs1) as i32;
+                        let offset = self.imm as i32;
+                        let i = m + offset;
+                        register.put(self.rd, memory[i as usize] as i32 as u32)
                     },
-                    _ => return
-                },
-            BFormatInstruction { imm, rs1, rs2, funct3 } =>
-                match funct3 {
-                    BEQ => {
-                        if register.get(rs1) == register.get(rs2) {
-                            register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), imm));
-                        }
+                    LBU => {
+                        let m = register.get(self.rs1) as i32;
+                        let offset = self.imm as i32;
+                        let i = m + offset;
+                        register.put(self.rd, memory[i as usize] as u8 as u32)
                     },
-                    BNE => {
-                        if register.get(rs1) != register.get(rs2) {
-                            register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), imm));
-                        }
-                    },
-                    BLT => {
-                        if (register.get(rs1) as i32) < (register.get(rs2) as i32) {
-                            register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), imm));
-                        }
-                    },
-                    BGE => {
-                        if (register.get(rs1) as i32) >= (register.get(rs2) as i32) {
-                            register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), imm));
-                        }
-                    },
-                    BLTU => {
-                        if register.get(rs1) < register.get(rs2) {
-                            register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), imm));
-                        }
-                    },
-                    BGEU => {
-                        if register.get(rs1) >= register.get(rs2) {
-                            register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), imm));
-                        }
-                    },
-                    _ => return
-                },
-            SFormatInstruction { imm, rs1, rs2, funct3 } => {
-                match funct3 {
-                    SB => {
-                        let m = (register.get(rs1) as i32 + imm) as usize;
-                        memory[m] = register.get(rs2) as u8 as u32;
-                    },
-                    SH => {
-                        let m = (register.get(rs1) as i32 + imm) as usize;
-                        memory[m] = register.get(rs2) as u16 as u32;
-                    },
-                    SW => {
-                        let m = (register.get(rs1) as i32 + imm) as usize;
-                        memory[m] = register.get(rs2) as u32;
+                    LHU => {
+                        let m = register.get(self.rs1) as i32;
+                        let offset = self.imm as i32;
+                        let i = m + offset;
+                        register.put(self.rd, memory[i as usize] as u16 as u32)
                     },
                     _ => return
                 }
-            }
+            },
+            _ => return
         }
     }
 
-    fn parse_iformat(bits: u32) -> Instruction {
+    fn parse(bits: u32) -> InstructionEnum {
         let opcode = bits & 0b1111111;
         let rd = (bits >> 7 & 0b11111) as usize;
         let funct3 = bits >> 12 & 0b111;
@@ -376,71 +183,278 @@ impl Instruction {
         let imm: u32 = IImmediate::from_instruction(bits).into();
         let imm = imm as i16;
 
-        IFormatInstruction {
-            imm,
-            rs1,
-            funct3,
-            rd,
-            opcode
+        InstructionEnum::IFormatInstruction {
+            instruction: IFormatInstruction {
+                imm,
+                rs1,
+                funct3,
+                rd,
+                opcode
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct JFormatInstruction {
+    imm: i32,
+    rd: usize,
+    opcode: u32
+}
+
+impl Instruction for JFormatInstruction {
+    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+        match self.opcode {
+            JAL => {
+                if self.rd > 0 {
+                    register.put(self.rd, register.pc() as u32 + 4);
+                }
+                register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
+            },
+            _ => return
         }
     }
 
-    fn parse_rformat(bits: u32) -> Instruction {
-        let rd = (bits >> 7 & 0b11111) as usize;
-        let funct3 = bits >> 12 & 0b111;
-        let rs1 = (bits >> 15 & 0b11111) as usize;
-        let rs2 = (bits >> 20 & 0b11111) as usize;
-        let funct7 = bits >> 25;
-        RFormatInstruction {
-            rs1,
-            rs2,
-            funct3,
-            funct7,
-            rd
-        }
-    }
-
-    fn parse_uformat(bits: u32) -> Instruction {
-        let opcode = bits & 0b1111111;
-        let rd = (bits >> 7 & 0b11111) as usize;
-        let imm: u32 = UImmediate::from_instruction(bits).into();
-        let imm = imm as i32;
-        UFormatInstruction {
-            imm,
-            rd,
-            opcode
-        }
-    }
-
-    fn parse_jformat(bits: u32) -> Instruction {
+    fn parse(bits: u32) -> InstructionEnum {
         let opcode = bits & 0b1111111;
         let rd = (bits >> 7 & 0b11111) as usize;
         let imm: u32 = JImmediate::from_instruction(bits).into();
         let imm = imm as i32;
 
-        JFormatInstruction {
-            imm,
-            rd,
-            opcode
+        InstructionEnum::JFormatInstruction {
+            instruction: JFormatInstruction {
+                imm,
+                rd,
+                opcode
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct RFormatInstruction {
+    rd: usize,
+    funct3: u32,
+    rs1: usize,
+    rs2: usize,
+    funct7: u32
+}
+
+impl Instruction for RFormatInstruction {
+    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+        let funct = (self.funct7 << 3) + self.funct3;
+        match funct {
+            ADD => { // Add
+                let i = register.get(self.rs1);
+                let j = register.get(self.rs2);
+                register.put(self.rd, i + j);
+            },
+            SUB => {
+                let i = register.get(self.rs1);
+                let j = register.get(self.rs2);
+                register.put(self.rd, i - j);
+            },
+            SLL => {
+                let i = register.get(self.rs1);
+                let j = register.get(self.rs2) & 0b11111;
+                register.put(self.rd, i << j)
+            },
+            SLT => {
+                let i = register.get(self.rs1) as i32;
+                let j = register.get(self.rs2) as i32;
+
+                if i < j {
+                    register.put(self.rd, 1);
+                } else {
+                    register.put(self.rd, 0);
+                }
+            },
+            SLTU => {
+                let i = register.get(self.rs1);
+                let j = register.get(self.rs2);
+                if i < j {
+                    register.put(self.rd, 1);
+                } else {
+                    register.put(self.rd, 0);
+                }
+            },
+            XOR => {
+                let i = register.get(self.rs1);
+                let j = register.get(self.rs2);
+                register.put(self.rd, i ^ j);
+            },
+            SRL => {
+                let i = register.get(self.rs1);
+                let j = register.get(self.rs2) & 0b11111;
+                register.put(self.rd, i >> j);
+            },
+            SRA => {
+                let i = register.get(self.rs1) as i32;
+                let j = register.get(self.rs2) & 0b11111;
+                register.put(self.rd, (i >> j) as u32);
+            },
+            OR => {
+                let i = register.get(self.rs1);
+                let j = register.get(self.rs2);
+                register.put(self.rd, i | j);
+            },
+            AND => {
+                let i = register.get(self.rs1);
+                let j = register.get(self.rs2);
+                println!("i: {}, j: {}, i & j: {}", i, j, i&j);
+                register.put(self.rd, i & j);
+            }
+            _ => return
         }
     }
 
-    fn parse_bformat(bits: u32) -> Instruction {
+    fn parse(bits: u32) -> InstructionEnum {
+        let rd = (bits >> 7 & 0b11111) as usize;
+        let funct3 = bits >> 12 & 0b111;
+        let rs1 = (bits >> 15 & 0b11111) as usize;
+        let rs2 = (bits >> 20 & 0b11111) as usize;
+        let funct7 = bits >> 25;
+
+        InstructionEnum::RFormatInstruction {
+            instruction: RFormatInstruction {
+                rs1,
+                rs2,
+                funct3,
+                funct7,
+                rd
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct UFormatInstruction {
+    imm: i32,
+    rd: usize,
+    opcode: u32
+}
+
+impl Instruction for UFormatInstruction {
+    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+        match self.opcode {
+            LUI => {
+                register.put(self.rd, (self.imm as u32) << 12);
+            },
+            AUIPC => {
+                let u_immediate = (self.imm as u32) << 12;
+                register.put(self.rd, register.pc() as u32 + u_immediate);
+            },
+            _ => return
+        }
+    }
+
+    fn parse(bits: u32) -> InstructionEnum {
+        let opcode = bits & 0b1111111;
+        let rd = (bits >> 7 & 0b11111) as usize;
+        let imm: u32 = UImmediate::from_instruction(bits).into();
+        let imm = imm as i32;
+
+        InstructionEnum::UFormatInstruction {
+            instruction: UFormatInstruction {
+                imm,
+                rd,
+                opcode
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct BFormatInstruction {
+    imm: i32,
+    rs1: usize,
+    rs2: usize,
+    funct3: u32
+}
+
+impl Instruction for BFormatInstruction {
+    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+        match self.funct3 {
+            BEQ => {
+                if register.get(self.rs1) == register.get(self.rs2) {
+                    register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
+                }
+            },
+            BNE => {
+                if register.get(self.rs1) != register.get(self.rs2) {
+                    register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
+                }
+            },
+            BLT => {
+                if (register.get(self.rs1) as i32) < (register.get(self.rs2) as i32) {
+                    register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
+                }
+            },
+            BGE => {
+                if (register.get(self.rs1) as i32) >= (register.get(self.rs2) as i32) {
+                    register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
+                }
+            },
+            BLTU => {
+                if register.get(self.rs1) < register.get(self.rs2) {
+                    register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
+                }
+            },
+            BGEU => {
+                if register.get(self.rs1) >= register.get(self.rs2) {
+                    register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
+                }
+            },
+            _ => return
+        }
+    }
+
+    fn parse(bits: u32) -> InstructionEnum {
         let rs1 = (bits >> 15 & 0b11111) as usize;
         let rs2 = (bits >> 20 & 0b11111) as usize;
         let funct3 = (bits >> 12 & 0b111) as u32;
         let imm: u32 = BImmediate::from_instruction(bits).into();
         let imm = imm as i32;
 
-        BFormatInstruction {
-            imm,
-            rs1,
-            rs2,
-            funct3
+        InstructionEnum::BFormatInstruction {
+            instruction: BFormatInstruction {
+                imm,
+                rs1,
+                rs2,
+                funct3
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct SFormatInstruction {
+    imm: i32,
+    rs1: usize,
+    rs2: usize,
+    funct3: u32
+}
+
+impl Instruction for SFormatInstruction {
+    fn execute(self, register: &mut Register, memory: &mut Memory) {
+        match self.funct3 {
+            SB => {
+                let m = (register.get(self.rs1) as i32 + self.imm) as usize;
+                memory[m] = register.get(self.rs2) as u8 as u32;
+            },
+            SH => {
+                let m = (register.get(self.rs1) as i32 + self.imm) as usize;
+                memory[m] = register.get(self.rs2) as u16 as u32;
+            },
+            SW => {
+                let m = (register.get(self.rs1) as i32 + self.imm) as usize;
+                memory[m] = register.get(self.rs2) as u32;
+            },
+            _ => return
         }
     }
 
-    fn parse_sformat(bits: u32) -> Instruction {
+    fn parse(bits: u32) -> InstructionEnum {
         let rs1 = (bits >> 15 & 0b11111) as usize;
         let rs2 = (bits >> 20 & 0b11111) as usize;
         let funct3 = (bits >> 12 & 0b111) as u32;
@@ -448,11 +462,87 @@ impl Instruction {
         let imm: u32 = SImmediate::from_instruction(bits).into();
         let imm = imm as i32;
 
-        SFormatInstruction {
+        InstructionEnum::SFormatInstruction {
+            instruction: SFormatInstruction {
             imm,
             rs1,
             rs2,
             funct3
+        }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum InstructionEnum {
+    IFormatInstruction {
+        instruction: IFormatInstruction
+    },
+    JFormatInstruction {
+        instruction: JFormatInstruction
+    },
+    RFormatInstruction {
+        instruction: RFormatInstruction
+    },
+    UFormatInstruction {
+        instruction: UFormatInstruction
+    },
+    BFormatInstruction {
+        instruction: BFormatInstruction
+    },
+    SFormatInstruction {
+        instruction: SFormatInstruction
+    }
+}
+
+// Implement SCALL/SBREAK/CSRR* with a single SYSTEM instruction that always traps
+// Implement FENCE and FENCE.I as NOPs
+
+pub fn from(bits: u32) -> Option<InstructionEnum> {
+    let opcode_mask = 0b1111111;
+    let opcode = bits & opcode_mask;
+    match opcode {
+        OP_IMM | JALR | LOAD => Some(IFormatInstruction::parse(bits)),
+        OP => Some(RFormatInstruction::parse(bits)),
+        LUI | AUIPC => Some(UFormatInstruction::parse(bits)),
+        JAL => Some(JFormatInstruction::parse(bits)),
+        BRANCH => Some(BFormatInstruction::parse(bits)),
+        STORE => Some(SFormatInstruction::parse(bits)),
+        FENCE => todo!(),
+        _ => None
+    }
+}
+
+impl InstructionEnum {
+    pub fn execute(self, register: &mut Register, memory: &mut Memory) {
+        match self {
+            InstructionEnum::IFormatInstruction { instruction } => {
+                instruction.execute(register, memory)
+            }
+            InstructionEnum::JFormatInstruction { instruction } => {
+                instruction.execute(register, memory)
+            }
+            InstructionEnum::RFormatInstruction { instruction } => {
+                instruction.execute(register, memory)
+            }
+            InstructionEnum::UFormatInstruction { instruction } => {
+                instruction.execute(register, memory)
+            }
+            InstructionEnum::BFormatInstruction { instruction } => {
+                instruction.execute(register, memory)
+            }
+            InstructionEnum::SFormatInstruction { instruction } => {
+                instruction.execute(register, memory)
+            }
+        }
+    }
+
+    pub fn should_end(&self, register: &Register) -> bool {
+        match self {
+            InstructionEnum::IFormatInstruction { instruction: IFormatInstruction { opcode, rd, rs1, .. }} => {
+                opcode.clone() == JALR && rd.clone() == 0 && rs1.clone() == 1 && register.get(rs1.clone()) == 0
+            }
+            _ => false
         }
     }
 }

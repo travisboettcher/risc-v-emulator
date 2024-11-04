@@ -1,8 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::ops::Range;
-use crate::assembly_compiler;
-use crate::instruction::{Instruction, JALR};
+use crate::{assembly_compiler, instruction};
 use crate::register::Register;
 
 const SP: usize = 2;
@@ -59,13 +58,11 @@ impl Processor {
         while self.register.pc() / 4 < self.instruction_index.1 {
             let binary = self.memory[self.register.pc() / 4];
             println!("[executing] Input: {:0>32b}", binary);
-            let instruction = Instruction::from(binary).unwrap();
+            let instruction = instruction::from(binary).unwrap();
             println!("[executing] Instruction: {:?}", instruction);
 
-            if let Instruction::IFormatInstruction { opcode, rd, rs1, ..} = instruction {
-                if opcode == JALR && rd == 0 && rs1 == 1 && self.register.get(rs1) == 0 {
-                    break;
-                }
+            if instruction.should_end(&self.register) {
+                break;
             }
 
             self.register.update_pc(self.register.pc() + 4);
