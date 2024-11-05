@@ -92,5 +92,16 @@ mod tests {
         let result = processor.get_registry_value(10);
         assert_eq!(7, result);
     }
+    
+    #[test]
+    fn test_sum10() {
+        let mut processor = Processor::new();
+        
+        processor.load_instructions("examples/sum10.s");
+        processor.execute_instructions();
+
+        let result = processor.get_registry_value(10);
+        assert_eq!(20, result);
+    }
 }
 

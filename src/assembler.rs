@@ -1,6 +1,7 @@
-use crate::instruction;
-use crate::immediates::{IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
 use crate::immediates::BImmediate;
+use crate::immediates::{IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
+use crate::instruction;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 struct BOperation {
@@ -260,6 +261,10 @@ const U_OPS: &[&str] = &[
     "auipc"
 ];
 
+const DATA_DIRECTIVES: &[&str] = &[
+    ".word"
+];
+
 fn compile_line(instruction: &str) -> u32 {
     let tokens = instruction.split_whitespace().collect::<Vec<_>>();
     match tokens[0] {
@@ -318,7 +323,17 @@ fn compile_line(instruction: &str) -> u32 {
                 offset: offset.to_owned()
             }.compile()
         },
+        token if DATA_DIRECTIVES.contains(&token) => {
+            parse_data_directive(&tokens)
+        }
         _ => panic!("oops! token not found: {}", tokens[0])
+    }
+}
+
+fn parse_data_directive(tokens: &Vec<&str>) -> u32 {
+    match tokens[0] {
+        ".word" => tokens[1].parse::<u32>().unwrap(),
+        _ => panic!("oops! data directive not found: {}", tokens[0])
     }
 }
 
@@ -357,7 +372,7 @@ fn parse_register(token: &str) -> &str {
         "t4" => "29",
         "t5" => "30",
         "t6" => "31",
-        _ => panic!("oops!")
+        t => t
     }
 }
 
@@ -367,7 +382,8 @@ fn parse_base_and_offset(token: &str) -> (&str, &str) {
         .unwrap()
 }
 
-fn pseudo_to_base_instructions(instruction: &str) -> Option<Vec<String>> {
+// FIXME add support for pseudo-instructions using labels
+fn pseudo_to_base_instructions(instruction: &str, symbol_table: &HashMap<&str, usize>) -> Option<Vec<String>> {
     let tokens = instruction.split_whitespace()
         .map(|t| t.trim_end_matches(','))
         .collect::<Vec<_>>();
@@ -425,15 +441,54 @@ fn pseudo_to_base_instructions(instruction: &str) -> Option<Vec<String>> {
                 format!("jalr x1, x6, {offset}", offset=(lsb))
             ])
         },
+        token if I_OPS_LOAD.contains(&token) => {
+            if let Some(addr) = symbol_table.get(tokens[2]) {
+                Some(vec![
+                    format!("addi {rd}, x0, {imm}", rd=tokens[1], imm=addr),
+                    format!("{op} {rd}, 0({rd})", op=tokens[0], rd=tokens[1])
+                ])
+            } else {
+                None
+            }
+        }
         _ => None
     }
 }
 
 pub fn compile(instructions: Vec<String>) -> Vec<u32> {
-    return instructions
+    let mut symbol_table = HashMap::new();
+    let mut trimmed_instructions = vec!();
+    for instruction in instructions.iter() {
+        if instruction.ends_with(":") {
+            let symbol = instruction.strip_suffix(":").unwrap();
+            symbol_table.insert(symbol, trimmed_instructions.len() * 4);
+        } else if !instruction.is_empty() {
+            trimmed_instructions.push(instruction.trim_start());
+        }
+    }
+
+    println!("[compiling] Symbol table: ");
+    symbol_table.iter()
+        .for_each(|(key, value)| {
+            println!("  {:08x} {}", value, key);
+        });
+
+    let start;
+    if let Some(addr) = symbol_table.get("start") {
+        start = format!("j {}", addr);
+        trimmed_instructions.insert(0, start.as_str());
+        symbol_table = symbol_table
+            .iter()
+            .map(|(key, value)| {
+                (*key, value + 4)
+            })
+            .collect()
+    }
+
+    trimmed_instructions
         .iter()
         .flat_map(|instruction| {
-            pseudo_to_base_instructions(instruction)
+            pseudo_to_base_instructions(instruction, &symbol_table)
                 .unwrap_or(vec![instruction.to_string()])
         })
         .map(|instruction: String| {
@@ -442,12 +497,12 @@ pub fn compile(instructions: Vec<String>) -> Vec<u32> {
             println!("[compiling] Output: '{:0>32b}'", binary);
             binary
         })
-        .collect();
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::assembly_compiler::{compile, compile_line};
+    use crate::assembler::{compile, compile_line};
 
     #[test]
     fn test_compile_add() {
@@ -594,6 +649,23 @@ mod tests {
         assert_eq!(ops, vec![
             0b00000111010110111100_00110_0010111,
             0b110100010101_00110_000_00001_1100111
+        ])
+    }
+
+    #[test]
+    fn test_variable_label() {
+        let instructions = vec![
+            "x:".to_string(),
+            ".word 10".to_string(),
+            "lw a0, x".to_string()
+        ];
+
+        let ops = compile(instructions);
+
+        assert_eq!(ops, vec![
+            0b00000000000000000000000000001010,
+            0b000000000000_00000_000_01010_0010011,
+            0b000000000000_01010_010_01010_0000011
         ])
     }
 
