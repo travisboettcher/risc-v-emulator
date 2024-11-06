@@ -32,6 +32,25 @@ mod tests {
     }
 
     #[test]
+    fn test_strncpy() {
+        let mut processor = Processor::new();
+
+        processor.load_instructions("examples/strncpy.s");
+        let bits: Vec<u32> = "hello".chars().map(|c| c as u32).collect();
+        let a1 = processor.load_into_memory(bits.as_slice());
+        let a0 = a1 + 6;
+        let a2 = 10u32;
+        processor.set_register_value(10, a0 as u32);
+        processor.set_register_value(11, a1 as u32);
+        processor.set_register_value(12, a2);
+        processor.execute_instructions();
+
+        let result = processor.get_copy_of_memory(a0..a0 + 10);
+        let expected: Vec<u32> = "hello\0\0\0\0\0".chars().map(|c| c as u32).collect();
+        assert_eq!(expected, result);
+    }
+
+    #[test]
     fn test_bubsort() {
         let mut processor = Processor::new();
 

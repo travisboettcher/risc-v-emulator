@@ -2,3 +2,4 @@
 .idea
 *.iml
 Cargo.lock
+/immediate_derive/target
