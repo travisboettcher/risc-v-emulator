@@ -383,7 +383,7 @@ fn parse_base_and_offset(token: &str) -> (&str, &str) {
 }
 
 // FIXME add support for pseudo-instructions using labels
-fn pseudo_to_base_instructions(instruction: &str, symbol_table: &HashMap<&str, usize>) -> Option<Vec<String>> {
+fn pseudo_to_base_instructions(instruction: &str, symbol_table: &HashMap<&str, usize>, instruction_location: usize) -> Option<Vec<String>> {
     let tokens = instruction.split_whitespace()
         .map(|t| t.trim_end_matches(','))
         .collect::<Vec<_>>();
@@ -416,20 +416,49 @@ fn pseudo_to_base_instructions(instruction: &str, symbol_table: &HashMap<&str, u
             format!("slt {rd}, x0, {rs}", rd=tokens[1], rs=tokens[2])
         ]),
         "beqz" => Some(vec![
-            format!("beq {rs}, x0, {offset}", rs=tokens[1], offset=tokens[2])
+            if let Some(addr) = symbol_table.get(tokens[2]) {
+                let offset = get_offset(*addr as i32, instruction_location as i32);
+                format!("beq {rs}, x0, {offset}", rs = tokens[1], offset = offset)
+            } else {
+                format!("beq {rs}, x0, {offset}", rs = tokens[1], offset = tokens[2])
+            }
         ]),
         "bnez" => Some(vec![
-            format!("bne {rs}, x0, {offset}", rs=tokens[1], offset=tokens[2])
+            if let Some(addr) = symbol_table.get(tokens[2]) {
+                let offset = get_offset(*addr as i32, instruction_location as i32);
+                format!("bne {rs}, x0, {offset}", rs=tokens[1], offset=offset)
+            } else {
+                format!("bne {rs}, x0, {offset}", rs=tokens[1], offset=tokens[2])
+            }
         ]),
         "bgt" => Some(vec![
-            format!("blt {rt}, {rs}, {offset}", rt=tokens[2], rs=tokens[1], offset=tokens[3])
+            if let Some(addr) = symbol_table.get(tokens[3]) {
+                let offset = get_offset(*addr as i32, instruction_location as i32);
+                format!("blt {rt}, {rs}, {offset}", rt = tokens[2], rs = tokens[1], offset = offset)
+            } else {
+                format!("blt {rt}, {rs}, {offset}", rt = tokens[2], rs = tokens[1], offset = tokens[3])
+            }
         ]),
         "ble" => Some(vec![
-            format!("bge {rt}, {rs}, {offset}", rt=tokens[2], rs=tokens[1], offset=tokens[3])
+            if let Some(addr) = symbol_table.get(tokens[3]) {
+                let offset = get_offset(*addr as i32, instruction_location as i32);
+                format!("bge {rt}, {rs}, {offset}", rt = tokens[2], rs = tokens[1], offset = offset)
+            } else {
+                format!("bge {rt}, {rs}, {offset}", rt=tokens[2], rs=tokens[1], offset=tokens[3])
+            }
         ]),
-        "j" => Some(vec![
-            format!("jal x0, {offset}", offset=tokens[1])
-        ]),
+        "j" => {
+            if let Some(addr) = symbol_table.get(tokens[1]) {
+                let offset = get_offset(*addr as i32, instruction_location as i32);
+                Some(vec![
+                    format!("jal x0, {offset}", offset=offset)
+                ])
+            } else {
+                Some(vec![
+                    format!("jal x0, {offset}", offset=tokens[1])
+                ])
+            }
+        },
         "ret" => Some(vec![
             String::from("jalr x0, x1, 0")
         ]),
@@ -450,20 +479,36 @@ fn pseudo_to_base_instructions(instruction: &str, symbol_table: &HashMap<&str, u
             } else {
                 None
             }
+        },
+        token if B_OPS.contains(&token) => {
+            if let Some(addr) = symbol_table.get(tokens[3]) {
+                let offset = get_offset(*addr as i32, instruction_location as i32);
+                Some(vec![
+                    format!("{op} {rt}, {rs}, {offset}", op=tokens[0], rt=tokens[1], rs=tokens[2], offset=offset)
+                ])
+            } else {
+                None
+            }
         }
         _ => None
     }
 }
 
+fn get_offset(addr: i32, instruction_location: i32) -> i32 {
+    addr - (instruction_location + 4)
+}
+
 pub fn compile(instructions: Vec<String>) -> Vec<u32> {
     let mut symbol_table = HashMap::new();
     let mut trimmed_instructions = vec!();
+    let mut active_location_counter = 0;
     for instruction in instructions.iter() {
         if instruction.ends_with(":") {
             let symbol = instruction.strip_suffix(":").unwrap();
-            symbol_table.insert(symbol, trimmed_instructions.len() * 4);
+            symbol_table.insert(symbol, active_location_counter);
         } else if !instruction.is_empty() {
             trimmed_instructions.push(instruction.trim_start());
+            active_location_counter += 4;
         }
     }
 
@@ -487,8 +532,9 @@ pub fn compile(instructions: Vec<String>) -> Vec<u32> {
 
     trimmed_instructions
         .iter()
-        .flat_map(|instruction| {
-            pseudo_to_base_instructions(instruction, &symbol_table)
+        .enumerate()
+        .flat_map(|(location, instruction)| {
+            pseudo_to_base_instructions(instruction, &symbol_table, location * 4)
                 .unwrap_or(vec![instruction.to_string()])
         })
         .map(|instruction: String| {
