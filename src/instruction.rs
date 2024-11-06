@@ -207,7 +207,7 @@ impl Instruction for JFormatInstruction {
         match self.opcode {
             JAL => {
                 if self.rd > 0 {
-                    register.put(self.rd, register.pc() as u32 + 4);
+                    register.put(self.rd, register.pc() as u32);
                 }
                 register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
             },

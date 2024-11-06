@@ -463,12 +463,19 @@ fn pseudo_to_base_instructions(instruction: &str, symbol_table: &HashMap<&str, u
             String::from("jalr x0, x1, 0")
         ]),
         "call" => {
-            let msb = tokens[1].parse::<u32>().unwrap() >> 12;
-            let lsb = tokens[1].parse::<u32>().unwrap() & 0b111111111111;
-            Some(vec![
-                format!("auipc x6, {offset}", offset=msb),
-                format!("jalr x1, x6, {offset}", offset=(lsb))
-            ])
+            if let Some(addr) = symbol_table.get(tokens[1]) {
+                let offset = get_offset(*addr as i32, instruction_location as i32);
+                Some(vec![
+                    format!("jal x1, {offset}", offset=offset)
+                ])
+            } else {
+                let msb = tokens[1].parse::<u32>().unwrap() >> 12;
+                let lsb = tokens[1].parse::<u32>().unwrap() & 0b111111111111;
+                Some(vec![
+                    format!("auipc x6, {offset}", offset = msb),
+                    format!("jalr x1, x6, {offset}", offset = (lsb))
+                ])
+            }
         },
         token if I_OPS_LOAD.contains(&token) => {
             if let Some(addr) = symbol_table.get(tokens[2]) {
@@ -502,12 +509,24 @@ pub fn compile(instructions: Vec<String>) -> Vec<u32> {
     let mut symbol_table = HashMap::new();
     let mut trimmed_instructions = vec!();
     let mut active_location_counter = 0;
+
+    let re = regex::Regex::new("#.*$").unwrap();
     for instruction in instructions.iter() {
+
+        let (instruction, _comments): (&str, &str) =
+            if let Some(captures) = re.captures(&instruction) {
+                let x = captures.get(0).unwrap();
+                instruction.split_at(x.start())
+            } else {
+                (instruction, "")
+            };
+
+        let instruction = instruction.trim();
         if instruction.ends_with(":") {
             let symbol = instruction.strip_suffix(":").unwrap();
             symbol_table.insert(symbol, active_location_counter);
         } else if !instruction.is_empty() {
-            trimmed_instructions.push(instruction.trim_start());
+            trimmed_instructions.push(instruction);
             active_location_counter += 4;
         }
     }

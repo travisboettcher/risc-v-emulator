@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 bitfield = "0.14.0"
 immediate_derive = { path = "immediate_derive" }
+regex = "1.11.1"
