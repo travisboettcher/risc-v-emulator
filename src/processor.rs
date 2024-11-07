@@ -1,23 +1,19 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::ops::Range;
-use crate::{assembler, instruction};
 use crate::register::Register;
+use crate::instruction;
+use std::ops::Range;
 
 const SP: usize = 2;
 
 pub struct Processor {
     register: Register,
-    memory: [u32; 1024],
-    instruction_index: (usize, usize)
+    memory: [u32; 1024]
 }
 
 impl Processor {
     pub fn new() -> Processor {
         let mut proc = Processor {
             register: Register::new(),
-            memory: [0u32; 1024],
-            instruction_index: (0, 0)
+            memory: [0u32; 1024]
         };
 
         // Initialize stack pointer to memory address 256
@@ -25,21 +21,10 @@ impl Processor {
         proc
     }
 
-    pub fn load_instructions(&mut self, file_path: &str) -> () {
-        let file = File::open(file_path).expect("no such file");
-        let buf = BufReader::new(file);
-
-        let instructions: Vec<String> = buf.lines()
-            .flatten()
-            .collect();
-
-        let instructions: Vec<u32> = assembler::compile(instructions);
-
-        for (idx, instruction) in instructions.iter().enumerate() {
+    pub fn load_instructions(&mut self, executable_code: Vec<u32>) -> () {
+        for (idx, instruction) in executable_code.iter().enumerate() {
             self.memory[idx * 4] = instruction.clone()
         }
-
-        self.instruction_index = (0, instructions.len() * 4);
     }
 
     /// Copies the slice into memory
@@ -55,7 +40,7 @@ impl Processor {
 
     pub fn execute_instructions(&mut self) {
         println!("--------------------------");
-        while self.register.pc() < self.instruction_index.1 {
+        loop {
             let binary = self.memory[self.register.pc()];
             println!("[executing] Input: {:0>32b}", binary);
             let instruction = instruction::from(binary).unwrap();

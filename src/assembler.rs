@@ -382,7 +382,6 @@ fn parse_base_and_offset(token: &str) -> (&str, &str) {
         .unwrap()
 }
 
-// FIXME add support for pseudo-instructions using labels
 fn pseudo_to_base_instructions(instruction: &str, symbol_table: &HashMap<&str, usize>, instruction_location: usize) -> Option<Vec<String>> {
     let tokens = instruction.split_whitespace()
         .map(|t| t.trim_end_matches(','))
@@ -505,7 +504,7 @@ fn get_offset(addr: i32, instruction_location: i32) -> i32 {
     addr - (instruction_location + 4)
 }
 
-pub fn compile(instructions: Vec<String>) -> Vec<u32> {
+pub fn assemble(instructions: Vec<String>) -> Vec<u32> {
     let mut symbol_table = HashMap::new();
     let mut trimmed_instructions = vec!();
     let mut active_location_counter = 0;
@@ -567,7 +566,7 @@ pub fn compile(instructions: Vec<String>) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
-    use crate::assembler::{compile, compile_line};
+    use crate::assembler::{assemble, compile_line};
 
     #[test]
     fn test_compile_add() {
@@ -700,7 +699,7 @@ mod tests {
     fn test_compile_beqz() {
         let instruction = "beqz t2, 6".to_string();
 
-        let ops = compile(vec![instruction]);
+        let ops = assemble(vec![instruction]);
 
         assert_eq!(ops, vec![0b0_000000_00000_00111_000_0011_0_1100011])
     }
@@ -709,7 +708,7 @@ mod tests {
     fn test_compile_call() {
         let instruction = "call 123456789".to_string();
 
-        let ops = compile(vec![instruction]);
+        let ops = assemble(vec![instruction]);
 
         assert_eq!(ops, vec![
             0b00000111010110111100_00110_0010111,
@@ -725,7 +724,7 @@ mod tests {
             "lw a0, x".to_string()
         ];
 
-        let ops = compile(instructions);
+        let ops = assemble(instructions);
 
         assert_eq!(ops, vec![
             0b00000000000000000000000000001010,

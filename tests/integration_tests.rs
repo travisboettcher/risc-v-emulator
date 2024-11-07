@@ -1,12 +1,15 @@
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
     use risc_v_emulator::processor::Processor;
+    use risc_v_emulator::assembler;
 
     #[test]
     fn test_strlen() {
         let mut processor = Processor::new();
 
-        processor.load_instructions("examples/strlen.s");
+        processor.load_instructions(assemble("examples/strlen.s"));
         let bits: Vec<u32> = "hello".chars().map(|c| c as u32).collect();
         let a0 = processor.load_into_memory(bits.as_slice());
         processor.set_register_value(10, a0 as u32);
@@ -19,7 +22,7 @@ mod tests {
     fn test_strcopy() {
         let mut processor = Processor::new();
 
-        processor.load_instructions("examples/strcopy.s");
+        processor.load_instructions(assemble("examples/strcopy.s"));
         let bits: Vec<u32> = "hello".chars().map(|c| c as u32).collect();
         let a1 = processor.load_into_memory(bits.as_slice());
         let a0 = a1 + 6;
@@ -35,7 +38,7 @@ mod tests {
     fn test_strncpy() {
         let mut processor = Processor::new();
 
-        processor.load_instructions("examples/strncpy.s");
+        processor.load_instructions(assemble("examples/strncpy.s"));
         let bits: Vec<u32> = "hello".chars().map(|c| c as u32).collect();
         let a1 = processor.load_into_memory(bits.as_slice());
         let a0 = a1 + 6;
@@ -54,7 +57,7 @@ mod tests {
     fn test_bubsort() {
         let mut processor = Processor::new();
 
-        processor.load_instructions("examples/bubsort.s");
+        processor.load_instructions(assemble("examples/bubsort.s"));
         let a0 = processor.load_into_memory(&[1, 4, 3, 2, 5]);
         processor.set_register_value(10, a0 as u32);
         processor.set_register_value(11, 5);
@@ -68,7 +71,7 @@ mod tests {
     fn test_strrev() {
         let mut processor = Processor::new();
 
-        processor.load_instructions("examples/strrev.s");
+        processor.load_instructions(assemble("examples/strrev.s"));
         let bits: Vec<u32> = "hello\0".chars().map(|c| c as u32).collect();
         let a0 = processor.load_into_memory(bits.as_slice());
         processor.set_register_value(10, a0 as u32);
@@ -83,7 +86,7 @@ mod tests {
     fn test_arraysum() {
         let mut processor = Processor::new();
 
-        processor.load_instructions("examples/arraysum.s");
+        processor.load_instructions(assemble("examples/arraysum.s"));
         let ints: Vec<u32> = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         let a0 = processor.load_into_memory(ints.as_slice());
         processor.set_register_value(10, a0 as u32);
@@ -100,7 +103,7 @@ mod tests {
     fn test_binsearch() {
         let mut processor = Processor::new();
 
-        processor.load_instructions("examples/binsearch.s");
+        processor.load_instructions(assemble("examples/binsearch.s"));
         let ints: Vec<u32> = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         let a0 = processor.load_into_memory(ints.as_slice());
         processor.set_register_value(10, a0 as u32);
@@ -116,11 +119,22 @@ mod tests {
     fn test_sum10() {
         let mut processor = Processor::new();
         
-        processor.load_instructions("examples/sum10.s");
+        processor.load_instructions(assemble("examples/sum10.s"));
         processor.execute_instructions();
 
         let result = processor.get_registry_value(10);
         assert_eq!(20, result);
+    }
+    
+    fn assemble(file_path: &str) -> Vec<u32> {
+        let file = File::open(file_path).expect("no such file");
+        let buf = BufReader::new(file);
+
+        let instructions: Vec<String> = buf.lines()
+            .flatten()
+            .collect();
+
+        assembler::assemble(instructions)
     }
 }
 
