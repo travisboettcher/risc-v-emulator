@@ -53,7 +53,7 @@ pub const SB: u32 = 0b000;
 pub const SH: u32 = 0b001;
 pub const SW: u32 = 0b010;
 
-type Memory = [u32; 1024];
+type Memory = [u8; 1024];
 
 pub trait Instruction {
     fn execute(self, register: &mut Register, memory: &mut Memory);
@@ -148,13 +148,22 @@ impl Instruction for IFormatInstruction {
                         let m = register.get(self.rs1) as i32;
                         let offset = self.imm as i32;
                         let i = m + offset;
-                        register.put(self.rd, memory[i as usize] as i16 as u32)
+
+                        let mut bits: [u8; 4] = [0u8; 4];
+                        bits[0] = 0xFF;
+                        bits[1] = 0xFF;
+                        bits[2] = memory[i as usize];
+                        bits[3] = memory[(i + 1)as usize];
+                        register.put(self.rd, u32::from_be_bytes(bits))
                     },
                     LW => {
                         let m = register.get(self.rs1) as i32;
                         let offset = self.imm as i32;
                         let i = m + offset;
-                        register.put(self.rd, memory[i as usize] as i32 as u32)
+
+                        let mut bits: [u8; 4] = [0u8; 4];
+                        bits.clone_from_slice(&memory[i as usize..(i + 4) as usize]);
+                        register.put(self.rd, u32::from_be_bytes(bits))
                     },
                     LBU => {
                         let m = register.get(self.rs1) as i32;
@@ -166,7 +175,11 @@ impl Instruction for IFormatInstruction {
                         let m = register.get(self.rs1) as i32;
                         let offset = self.imm as i32;
                         let i = m + offset;
-                        register.put(self.rd, memory[i as usize] as u16 as u32)
+
+                        let mut bits: [u8; 4] = [0u8; 4];
+                        bits[2] = memory[i as usize];
+                        bits[3] = memory[(i + 1)as usize];
+                        register.put(self.rd, u32::from_be_bytes(bits))
                     },
                     _ => return
                 }
@@ -440,15 +453,21 @@ impl Instruction for SFormatInstruction {
         match self.funct3 {
             SB => {
                 let m = (register.get(self.rs1) as i32 + self.imm) as usize;
-                memory[m] = register.get(self.rs2) as u8 as u32;
+                memory[m] = register.get(self.rs2).to_be_bytes()[3];
             },
             SH => {
                 let m = (register.get(self.rs1) as i32 + self.imm) as usize;
-                memory[m] = register.get(self.rs2) as u16 as u32;
+                let r = register.get(self.rs2).to_be_bytes();
+                memory[m] = r[2];
+                memory[m + 1] = r[3]
             },
             SW => {
                 let m = (register.get(self.rs1) as i32 + self.imm) as usize;
-                memory[m] = register.get(self.rs2) as u32;
+                let r = register.get(self.rs2).to_be_bytes();
+                memory[m] = r[0];
+                memory[m + 1] = r[1];
+                memory[m + 2] = r[2];
+                memory[m + 3] = r[3];
             },
             _ => return
         }
@@ -498,7 +517,8 @@ pub enum InstructionEnum {
 // Implement SCALL/SBREAK/CSRR* with a single SYSTEM instruction that always traps
 // Implement FENCE and FENCE.I as NOPs
 
-pub fn from(bits: u32) -> Option<InstructionEnum> {
+pub fn from(bits: [u8; 4]) -> Option<InstructionEnum> {
+    let bits = u32::from_be_bytes(bits);
     let opcode_mask = 0b1111111;
     let opcode = bits & opcode_mask;
     match opcode {
@@ -558,7 +578,7 @@ mod tests {
         register.put(4, 0x7fffffff);
         register.put(24, 0x1);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 25,
@@ -577,7 +597,7 @@ mod tests {
         let mut register = Register::new();
         register.put(20, 0x20000000);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: -0x800,
@@ -597,7 +617,7 @@ mod tests {
         register.put(10, 0x3);
         register.put(11, 0x55555556);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 12,
@@ -616,7 +636,7 @@ mod tests {
         let mut register = Register::new();
         register.put(10, 0x55555555);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0x334,
@@ -634,7 +654,7 @@ mod tests {
     fn test_auipc() {
         let mut register = Register::new();
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = UFormatInstruction {
             imm: 0x100,
@@ -650,7 +670,7 @@ mod tests {
     fn test_lui() {
         let mut register = Register::new();
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = UFormatInstruction {
             imm: 0x3,
@@ -668,7 +688,7 @@ mod tests {
         register.put(8, 0x100000);
         register.put(26, 0x10);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 26,
@@ -687,7 +707,7 @@ mod tests {
         let mut register = Register::new();
         register.put(17, 0x33333334);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0x7ff,
@@ -707,7 +727,7 @@ mod tests {
         register.put(12, 0x7fffffff);
         register.put(26, 0x15);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 16,
@@ -726,7 +746,7 @@ mod tests {
         let mut register = Register::new();
         register.put(26, 0x66666666);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0xf,
@@ -746,7 +766,7 @@ mod tests {
         register.put(26, 0x66666667);
         register.put(18, 0x66666667);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 26,
@@ -766,7 +786,7 @@ mod tests {
         register.put(26, 0x66666667);
         register.put(18, 0x66666667);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 26,
@@ -786,7 +806,7 @@ mod tests {
         register.put(26, (-0x201i32) as u32);
         register.put(18, 0x5);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 26,
@@ -805,7 +825,7 @@ mod tests {
         let mut register = Register::new();
         register.put(14, 0x10);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0x10,
@@ -824,7 +844,7 @@ mod tests {
         let mut register = Register::new();
         register.put(25, -0x81i32 as u32);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: -0x800,
@@ -843,7 +863,7 @@ mod tests {
         let mut register = Register::new();
         register.put(5, -0x1001i32 as u32);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0x0,
@@ -862,7 +882,7 @@ mod tests {
         let mut register = Register::new();
         register.put(23, 0x400);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0x0,
@@ -881,7 +901,7 @@ mod tests {
         let mut register = Register::new();
         register.put(2, 0x800);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0xfff,
@@ -901,7 +921,7 @@ mod tests {
         register.put(14, 0xfffffffe);
         register.put(24, 0xffffffff);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 14,
@@ -921,7 +941,7 @@ mod tests {
         register.put(5, 0xffffffff);
         register.put(14, 0x0);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 19,
@@ -941,7 +961,7 @@ mod tests {
         register.put(16, -0x80000000i32 as u32);
         register.put(27, 0x8);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 16,
@@ -960,7 +980,7 @@ mod tests {
         let mut register = Register::new();
         register.put(31, -0x9i32 as u32);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0x9 + 0b010000000000, // adding discriminator
@@ -980,7 +1000,7 @@ mod tests {
         register.put(26, -0x400001i32 as u32);
         register.put(11, 0xf);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 11,
@@ -999,7 +1019,7 @@ mod tests {
         let mut register = Register::new();
         register.put(30, -0xb504i32 as u32);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: 0x2,
@@ -1019,7 +1039,7 @@ mod tests {
         register.put(24, 0x55555554);
         register.put(26, 0x6);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 26,
@@ -1039,7 +1059,7 @@ mod tests {
         register.put(27, 0x66666665);
         register.put(24, 0x3);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = RFormatInstruction {
             rd: 24,
@@ -1058,7 +1078,7 @@ mod tests {
         let mut register = Register::new();
         register.put(24, 0x33333334);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = IFormatInstruction {
             imm: -0x800,
@@ -1077,8 +1097,11 @@ mod tests {
         let mut register = Register::new();
         register.put(24, 0xFF);
 
-        let mut memory = [0u32; 1024];
-        memory[0xFF] = 0xcccccb34;
+        let mut memory = [0u8; 1024];
+        memory[0xFF] = 0x34;
+        memory[0x100] = 0xcb;
+        memory[0x101] = 0xcc;
+        memory[0x102] = 0xcc;
 
         let instruction = IFormatInstruction {
             imm: 0x0,
@@ -1095,10 +1118,13 @@ mod tests {
     #[test]
     fn test_lh() {
         let mut register = Register::new();
-        register.put(24, 0xFF);
+        register.put(24, 0x101);
 
-        let mut memory = [0u32; 1024];
-        memory[0xFF] = 0xcccccb34;
+        let mut memory = [0u8; 1024];
+        memory[0xFF] = 0xcc;
+        memory[0x100] = 0xcc;
+        memory[0x101] = 0xcb;
+        memory[0x102] = 0x34;
 
         let instruction = IFormatInstruction {
             imm: 0x0,
@@ -1117,8 +1143,11 @@ mod tests {
         let mut register = Register::new();
         register.put(24, 0xFF);
 
-        let mut memory = [0u32; 1024];
-        memory[0xFF] = 0xcccccb34;
+        let mut memory = [0u8; 1024];
+        memory[0xFF] = 0xcc;
+        memory[0x100] = 0xcc;
+        memory[0x101] = 0xcb;
+        memory[0x102] = 0x34;
 
         let instruction = IFormatInstruction {
             imm: 0x0,
@@ -1137,8 +1166,11 @@ mod tests {
         let mut register = Register::new();
         register.put(24, 0xFF);
 
-        let mut memory = [0u32; 1024];
-        memory[0xFF] = 0xcccccb34;
+        let mut memory = [0u8; 1024];
+        memory[0xFF] = 0x34;
+        memory[0x100] = 0xcb;
+        memory[0x101] = 0xcc;
+        memory[0x102] = 0xcc;
 
         let instruction = IFormatInstruction {
             imm: 0x0,
@@ -1155,10 +1187,13 @@ mod tests {
     #[test]
     fn test_lhu() {
         let mut register = Register::new();
-        register.put(24, 0xFF);
+        register.put(24, 0x101);
 
-        let mut memory = [0u32; 1024];
-        memory[0xFF] = 0xcccccb34;
+        let mut memory = [0u8; 1024];
+        memory[0xFF] = 0xcc;
+        memory[0x100] = 0xcc;
+        memory[0x101] = 0xcb;
+        memory[0x102] = 0x34;
 
         let instruction = IFormatInstruction {
             imm: 0x0,
@@ -1178,7 +1213,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, 0xFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1197,7 +1232,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, -100i32 as u32);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1216,7 +1251,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, -100i32 as u32);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1235,7 +1270,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, 0xFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1254,7 +1289,7 @@ mod tests {
         register.put(10, -100i32 as u32);
         register.put(20, 0xFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1273,7 +1308,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, 0xFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1292,7 +1327,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, -100i32 as u32);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1311,7 +1346,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, 0xFFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1330,7 +1365,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, -100i32 as u32);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1349,7 +1384,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, 0xFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1368,7 +1403,7 @@ mod tests {
         register.put(10, -100i32 as u32);
         register.put(20, 0xFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1387,7 +1422,7 @@ mod tests {
         register.put(10, 0xFF);
         register.put(20, 0xFFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = BFormatInstruction {
             imm: 100,
@@ -1406,7 +1441,7 @@ mod tests {
         register.put(10, 0x100);
         register.put(20, 0xFFFFFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = SFormatInstruction {
             imm: 128,
@@ -1425,7 +1460,7 @@ mod tests {
         register.put(10, 0x100);
         register.put(20, 0xFFFFFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = SFormatInstruction {
             imm: 128,
@@ -1435,7 +1470,8 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(memory[384], 0xFFFF);
+        assert_eq!(memory[384], 0xFF);
+        assert_eq!(memory[385], 0xFF)
     }
 
     #[test]
@@ -1444,7 +1480,7 @@ mod tests {
         register.put(10, 0x100);
         register.put(20, 0xFFFFFF);
 
-        let mut memory = [0u32; 1024];
+        let mut memory = [0u8; 1024];
 
         let instruction = SFormatInstruction {
             imm: 128,
@@ -1454,6 +1490,9 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(memory[384], 0xFFFFFF);
+        assert_eq!(memory[384], 0x00);
+        assert_eq!(memory[385], 0xFF);
+        assert_eq!(memory[386], 0xFF);
+        assert_eq!(memory[387], 0xFF);
     }
 }

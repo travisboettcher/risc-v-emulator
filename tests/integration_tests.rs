@@ -10,7 +10,7 @@ mod tests {
         let mut processor = Processor::new();
 
         processor.load_instructions(assemble("examples/strlen.s"));
-        let bits: Vec<u32> = "hello".chars().map(|c| c as u32).collect();
+        let bits: Vec<u8> = "hello".chars().map(|c| c as u8).collect();
         let a0 = processor.load_into_memory(bits.as_slice());
         processor.set_register_value(10, a0 as u32);
         processor.execute_instructions();
@@ -23,7 +23,7 @@ mod tests {
         let mut processor = Processor::new();
 
         processor.load_instructions(assemble("examples/strcopy.s"));
-        let bits: Vec<u32> = "hello".chars().map(|c| c as u32).collect();
+        let bits: Vec<u8> = "hello".chars().map(|c| c as u8).collect();
         let a1 = processor.load_into_memory(bits.as_slice());
         let a0 = a1 + 6;
         processor.set_register_value(10, a0 as u32);
@@ -39,7 +39,7 @@ mod tests {
         let mut processor = Processor::new();
 
         processor.load_instructions(assemble("examples/strncpy.s"));
-        let bits: Vec<u32> = "hello".chars().map(|c| c as u32).collect();
+        let bits: Vec<u8> = "hello".chars().map(|c| c as u8).collect();
         let a1 = processor.load_into_memory(bits.as_slice());
         let a0 = a1 + 6;
         let a2 = 10u32;
@@ -49,7 +49,7 @@ mod tests {
         processor.execute_instructions();
 
         let result = processor.get_copy_of_memory(a0..a0 + 10);
-        let expected: Vec<u32> = "hello\0\0\0\0\0".chars().map(|c| c as u32).collect();
+        let expected: Vec<u8> = "hello\0\0\0\0\0".chars().map(|c| c as u8).collect();
         assert_eq!(expected, result);
     }
 
@@ -58,13 +58,25 @@ mod tests {
         let mut processor = Processor::new();
 
         processor.load_instructions(assemble("examples/bubsort.s"));
-        let a0 = processor.load_into_memory(&[1, 4, 3, 2, 5]);
+        let a0 = processor.load_into_memory(&[
+            0, 0, 0, 1, 
+            0, 0, 0, 4, 
+            0, 0, 0, 3, 
+            0, 0, 0, 2, 
+            0, 0, 0, 5
+        ]);
         processor.set_register_value(10, a0 as u32);
         processor.set_register_value(11, 5);
         processor.execute_instructions();
 
-        let result = processor.get_copy_of_memory(a0..a0 + 5);
-        assert_eq!(vec![1, 2, 3, 4, 5], result);
+        let result = processor.get_copy_of_memory(a0..a0 + 20);
+        assert_eq!(vec![
+            0, 0, 0, 1, 
+            0, 0, 0, 2, 
+            0, 0, 0, 3, 
+            0, 0, 0, 4, 
+            0, 0, 0, 5
+        ], result);
     }
 
     #[test]
@@ -72,13 +84,13 @@ mod tests {
         let mut processor = Processor::new();
 
         processor.load_instructions(assemble("examples/strrev.s"));
-        let bits: Vec<u32> = "hello\0".chars().map(|c| c as u32).collect();
+        let bits: Vec<u8> = "hello\0".chars().map(|c| c as u8).collect();
         let a0 = processor.load_into_memory(bits.as_slice());
         processor.set_register_value(10, a0 as u32);
         processor.execute_instructions();
 
         let result = processor.get_copy_of_memory(a0..a0 + 5);
-        let expected: Vec<u32> = "olleh".chars().map(|c| c as u32).collect();
+        let expected: Vec<u8> = "olleh".chars().map(|c| c as u8).collect();
         assert_eq!(expected, result);
     }
 
@@ -87,16 +99,25 @@ mod tests {
         let mut processor = Processor::new();
 
         processor.load_instructions(assemble("examples/arraysum.s"));
-        let ints: Vec<u32> = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let a0 = processor.load_into_memory(ints.as_slice());
+        let ints = [
+            0, 0, 0, 1, 
+            0, 0, 0, 2, 
+            0, 0, 0, 3, 
+            0, 0, 0, 4, 
+            0, 0, 0, 5, 
+            0, 0, 0, 6, 
+            0, 0, 0, 7, 
+            0, 0, 0, 8, 
+            0, 0, 0, 9, 
+            0, 0, 0, 10
+        ];
+        let a0 = processor.load_into_memory(&ints);
         processor.set_register_value(10, a0 as u32);
         processor.set_register_value(11, ints.len() as u32);
         processor.execute_instructions();
 
         let result = processor.get_registry_value(10);
-        let expected: u32 = ints.iter().sum();
-        assert_eq!(expected, result);
-
+        assert_eq!(55, result);
     }
 
     #[test]
@@ -104,11 +125,22 @@ mod tests {
         let mut processor = Processor::new();
 
         processor.load_instructions(assemble("examples/binsearch.s"));
-        let ints: Vec<u32> = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let a0 = processor.load_into_memory(ints.as_slice());
+        let ints = [
+            0, 0, 0, 1,
+            0, 0, 0, 2,
+            0, 0, 0, 3,
+            0, 0, 0, 4,
+            0, 0, 0, 5,
+            0, 0, 0, 6,
+            0, 0, 0, 7,
+            0, 0, 0, 8,
+            0, 0, 0, 9,
+            0, 0, 0, 10
+        ];
+        let a0 = processor.load_into_memory(&ints);
         processor.set_register_value(10, a0 as u32);
         processor.set_register_value(11, 8);
-        processor.set_register_value(12, ints.len() as u32);
+        processor.set_register_value(12, 10);
         processor.execute_instructions();
 
         let result = processor.get_registry_value(10);
