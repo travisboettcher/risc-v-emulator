@@ -1,3 +1,45 @@
+//! Assembly language compiler for RISC-V instructions.
+//!
+//! This module provides the primary interface for converting RISC-V assembly language
+//! into machine-executable 32-bit instructions. The assembler is a two-pass compiler that:
+//! - Parses assembly instructions and pseudo-instructions
+//! - Manages a symbol table for labels and references
+//! - Expands pseudo-instructions to their base instruction equivalents
+//! - Encodes all instruction formats into 32-bit binary representations
+//! - Handles comments and whitespace normalization
+//!
+//! # Supported Instruction Types
+//!
+//! - **R-type**: Register-register operations (add, sub, and, or, xor, etc.)
+//! - **I-type**: Register-immediate operations (addi, andi, ori, etc.)
+//! - **Load (I-type)**: Memory load operations (lw, lh, lb, etc.)
+//! - **S-type**: Memory store operations (sw, sh, sb)
+//! - **B-type**: Conditional branches (beq, bne, blt, etc.)
+//! - **U-type**: Upper immediate loads (lui, auipc)
+//! - **J-type**: Unconditional jumps (jal)
+//!
+//! # Pseudo-Instruction Support
+//!
+//! The assembler automatically expands pseudo-instructions:
+//! - `nop` - No operation
+//! - `li rd, imm` - Load immediate
+//! - `mv rd, rs` - Move register
+//! - `j label` - Jump
+//! - And more...
+//!
+//! # Example
+//!
+//! ```
+//! use risc_v_emulator::assembler::assemble;
+//!
+//! let assembly = vec![
+//!     "addi x5, x0, 42".to_string(),
+//!     "add x6, x5, x5".to_string(),
+//! ];
+//! let code = assemble(assembly);
+//! assert_eq!(code.len(), 2);
+//! ```
+
 use crate::immediates::BImmediate;
 use crate::immediates::{IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
 use crate::instruction;
@@ -504,6 +546,207 @@ fn get_offset(addr: i32, instruction_location: i32) -> i32 {
     addr - (instruction_location + 4)
 }
 
+/// Assembles RISC-V assembly code into executable 32-bit machine instructions.
+///
+/// This is the main public API for the assembler module. It takes a vector of assembly
+/// instruction strings and performs a complete two-pass assembly process:
+/// 1. **First Pass**: Parse instructions, collect labels into symbol table
+/// 2. **Second Pass**: Expand pseudo-instructions and compile to machine code
+///
+/// The function returns a vector of 32-bit instruction words ready for execution
+/// by the [`crate::processor::Processor`].
+///
+/// # Arguments
+///
+/// * `instructions` - A vector of assembly instruction strings
+///   - Each string is one instruction or label
+///   - Can include inline comments (lines or parts starting with `#`)
+///   - Can include whitespace and empty lines
+///
+/// # Returns
+///
+/// A `Vec<u32>` containing the assembled machine code where:
+/// - Each element is a 32-bit instruction word
+/// - Instructions are in program order (can be loaded sequentially)
+/// - The vector is ready for loading into a [`crate::processor::Processor`]
+///
+/// # Supported Instruction Types
+///
+/// ## Base Instructions (All RISC-V I-type, R-type, S-type, B-type, U-type, J-type)
+///
+/// **R-type (Register-Register)**:
+/// - Arithmetic: `add rd, rs1, rs2`, `sub rd, rs1, rs2`, `and rd, rs1, rs2`,
+///   `or rd, rs1, rs2`, `xor rd, rs1, rs2`, `sll rd, rs1, rs2`, `srl rd, rs1, rs2`,
+///   `sra rd, rs1, rs2`
+/// - Comparison: `slt rd, rs1, rs2`, `sltu rd, rs1, rs2`
+///
+/// **I-type (Register-Immediate)**:
+/// - Arithmetic: `addi rd, rs1, imm`, `andi rd, rs1, imm`, `ori rd, rs1, imm`,
+///   `xori rd, rs1, imm`, `slli rd, rs1, imm`, `srli rd, rs1, imm`, `srai rd, rs1, imm`
+/// - Comparison: `slti rd, rs1, imm`, `sltiu rd, rs1, imm`
+/// - Jump: `jalr rd, rs1, imm`
+///
+/// **Load (I-type)**:
+/// - `lw rd, offset(rs1)` - Load word
+/// - `lh rd, offset(rs1)` - Load half-word (sign-extended)
+/// - `lhu rd, offset(rs1)` - Load half-word unsigned (zero-extended)
+/// - `lb rd, offset(rs1)` - Load byte (sign-extended)
+/// - `lbu rd, offset(rs1)` - Load byte unsigned (zero-extended)
+///
+/// **S-type (Store)**:
+/// - `sw rs2, offset(rs1)` - Store word
+/// - `sh rs2, offset(rs1)` - Store half-word
+/// - `sb rs2, offset(rs1)` - Store byte
+///
+/// **B-type (Branch)**:
+/// - `beq rs1, rs2, label` - Branch if equal
+/// - `bne rs1, rs2, label` - Branch if not equal
+/// - `blt rs1, rs2, label` - Branch if less than
+/// - `bge rs1, rs2, label` - Branch if greater or equal
+/// - `bltu rs1, rs2, label` - Branch if less than (unsigned)
+/// - `bgeu rs1, rs2, label` - Branch if greater or equal (unsigned)
+///
+/// **U-type (Upper Immediate)**:
+/// - `lui rd, imm` - Load upper immediate
+/// - `auipc rd, imm` - Add upper immediate to PC
+///
+/// **J-type (Jump)**:
+/// - `jal rd, label` - Jump and link
+///
+/// # Pseudo-Instructions (Automatically Expanded)
+///
+/// **Control Flow**:
+/// - `nop` - No operation (expands to `addi x0, x0, 0`)
+/// - `j label` - Jump unconditionally
+/// - `ret` - Return from function
+/// - `call label` - Call a function
+///
+/// **Data Movement**:
+/// - `li rd, imm` - Load immediate (handles 32-bit immediates)
+/// - `mv rd, rs` - Move register (copy)
+///
+/// **Logical Operations**:
+/// - `not rd, rs` - Logical NOT
+/// - `neg rd, rs` - Negate
+///
+/// **Zero Comparisons**:
+/// - `seqz rd, rs` - Set if equal to zero
+/// - `snez rd, rs` - Set if not equal to zero
+/// - `sltz rd, rs` - Set if less than zero
+/// - `sgtz rd, rs` - Set if greater than zero
+///
+/// **Branch Pseudo-Instructions**:
+/// - `beqz rs, label` - Branch if equal to zero
+/// - `bnez rs, label` - Branch if not equal to zero
+/// - `bgt rs1, rs2, label` - Branch if greater than
+/// - `ble rs1, rs2, label` - Branch if less or equal
+///
+/// # Labels and Symbols
+///
+/// Labels are defined by ending a line with `:` (e.g., `loop:`, `start:`):
+/// - Labels are automatically collected into a symbol table
+/// - Label addresses are calculated during the first pass
+/// - Labels can be referenced in branch and jump instructions
+/// - Forward references (jumping to labels later in code) are supported
+/// - A special `start` label marks the program entry point
+///
+/// # Comments
+///
+/// - Lines or portions of lines starting with `#` are comments
+/// - Comments are ignored during assembly
+/// - Inline comments are supported: `addi x5, x0, 42 # Load 42 into x5`
+///
+/// # Whitespace Handling
+///
+/// - Leading and trailing whitespace is automatically stripped
+/// - Empty lines and lines with only comments are ignored
+/// - Multiple spaces between operands are collapsed
+///
+/// # Register Names
+///
+/// Registers can be referenced by:
+/// - **Number**: `x0`, `x1`, `x2`, ..., `x31`
+/// - **ABI Name**: `zero`, `ra`, `sp`, `gp`, `tp`, `t0`, `s0`, `a0`, etc.
+///
+/// # Immediate Values
+///
+/// Immediates can be specified as:
+/// - **Decimal**: `42`, `-100`, `2048`
+/// - **Hexadecimal**: `0xFF`, `0x1000`
+/// - **Binary**: `0b1010`
+/// - **Labels**: In branch/jump instructions (resolved to addresses)
+///
+/// # Output and Side Effects
+///
+/// The function prints debug information to stdout:
+/// - `[compiling] Symbol table:` - Lists all labels and their addresses
+/// - `[compiling] <instruction details>` - Details of each compiled instruction
+/// - `<32-bit binary>` - The binary representation of each instruction
+///
+/// This output is useful for debugging assembly but can be verbose for large programs.
+///
+/// # Panics
+///
+/// The function may panic in these situations:
+/// - Invalid register names or indices
+/// - Malformed instruction syntax
+/// - Invalid operand values or types
+/// - Label references that cannot be resolved
+/// - Immediate values out of valid ranges for their instruction type
+///
+/// # Complexity
+///
+/// - Time: O(n) where n is the number of instructions
+/// - Space: O(n) for the symbol table and output vector
+///
+/// # Example: Simple Arithmetic Program
+///
+/// ```
+/// use risc_v_emulator::assembler::assemble;
+///
+/// let assembly = vec![
+///     "addi x5, x0, 10".to_string(),   // x5 = 10
+///     "addi x6, x0, 20".to_string(),   // x6 = 20
+///     "add x7, x5, x6".to_string(),    // x7 = 30
+/// ];
+///
+/// let executable = assemble(assembly);
+/// assert_eq!(executable.len(), 3);    // Three instructions compiled
+/// ```
+///
+/// # Example: Program with Labels
+///
+/// ```no_run
+/// use risc_v_emulator::assembler::assemble;
+///
+/// let assembly = vec![
+///     "addi x5, x0, 5".to_string(),    // Counter = 5
+///     "loop:".to_string(),
+///     "addi x5, x5, -1".to_string(),   // Decrement counter
+///     "bne x5, x0, loop".to_string(),  // Jump back if not zero
+/// ];
+///
+/// let executable = assemble(assembly);
+/// ```
+///
+/// # Example: Pseudo-Instructions
+///
+/// ```no_run
+/// use risc_v_emulator::assembler::assemble;
+///
+/// let assembly = vec![
+///     "li x5, 0x12345678".to_string(),  // Load 32-bit immediate
+///     "mv x6, x5".to_string(),          // Copy register
+///     "nop".to_string(),                // No-op
+/// ];
+///
+/// let executable = assemble(assembly);
+/// ```
+///
+/// # See Also
+///
+/// - [`crate::processor::Processor::load_instructions`] - Load assembled code
+/// - [`crate::processor::Processor::execute_instructions`] - Execute assembled code
 pub fn assemble(instructions: Vec<String>) -> Vec<u32> {
     let mut symbol_table = HashMap::new();
     let mut trimmed_instructions = vec!();

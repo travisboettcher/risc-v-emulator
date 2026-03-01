@@ -2,6 +2,13 @@
 name = "risc_v_emulator"
 version = "0.1.0"
 edition = "2021"
+description = "A comprehensive RISC-V instruction set emulator written in Rust. Provides full CPU simulation with 32 general-purpose registers, 1024-byte memory management, instruction execution, and assembly-to-machine-code compilation supporting all RISC-V instruction formats (R, I, S, B, U, J type) with pseudo-instruction expansion."
+authors = ["RISC-V Emulator Contributors"]
+license = "MIT"
+keywords = ["risc-v", "emulator", "processor", "instruction-set", "assembly"]
+categories = ["emulators", "simulation"]
+repository = "https://github.com/yourusername/risc-v-emulator"
+documentation = "https://docs.rs/risc_v_emulator"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -9,3 +16,8 @@ edition = "2021"
 bitfield = "0.14.0"
 immediate_derive = { path = "immediate_derive" }
 regex = "1.11.1"
+clap = { version = "4.5", features = ["derive"] }
+
+[[bin]]
+name = "riscv-emu"
+path = "src/bin/riscv-emu.rs"
