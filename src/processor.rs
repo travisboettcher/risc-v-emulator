@@ -3,22 +3,22 @@ use crate::instruction;
 use std::ops::Range;
 
 const SP: usize = 2;
+const DEFAULT_MEMORY_SIZE: usize = 4 * 1024; // 4KB default (increased from 1KB)
 
 pub struct Processor {
     register: Register,
-    memory: [u8; 1024]
+    memory: Vec<u8>
 }
 
 impl Processor {
+    /// Create a new processor with default memory size (4KB)
     pub fn new() -> Processor {
-        let mut proc = Processor {
-            register: Register::new(),
-            memory: [0u8; 1024]
-        };
+        ProcessorBuilder::new().build()
+    }
 
-        // Initialize stack pointer to memory address 256
-        proc.set_register_value(SP, 256);
-        proc
+    /// Get the size of the processor's memory in bytes
+    pub fn memory_size(&self) -> usize {
+        self.memory.len()
     }
 
     pub fn load_instructions(&mut self, executable_code: Vec<u32>) -> () {
@@ -65,5 +65,37 @@ impl Processor {
 
     pub fn get_registry_value(&self, index: usize) -> u32 {
         self.register.get(index)
+    }
+}
+
+/// Builder for creating a Processor with custom configuration
+pub struct ProcessorBuilder {
+    memory_size: usize,
+}
+
+impl ProcessorBuilder {
+    /// Create a new ProcessorBuilder with default settings
+    pub fn new() -> Self {
+        Self {
+            memory_size: DEFAULT_MEMORY_SIZE,
+        }
+    }
+
+    /// Set the memory size in bytes
+    pub fn with_memory_size(mut self, size: usize) -> Self {
+        self.memory_size = size;
+        self
+    }
+
+    /// Build the Processor with the configured settings
+    pub fn build(self) -> Processor {
+        let mut proc = Processor {
+            register: Register::new(),
+            memory: vec![0u8; self.memory_size]
+        };
+
+        // Initialize stack pointer to memory address 256
+        proc.set_register_value(SP, 256);
+        proc
     }
 }

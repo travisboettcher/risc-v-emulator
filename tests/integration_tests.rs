@@ -170,3 +170,23 @@ mod tests {
     }
 }
 
+    
+    #[test]
+    fn test_custom_memory_size() {
+        use risc_v_emulator::ProcessorBuilder;
+        
+        // Create processor with custom memory size (16KB)
+        let processor = ProcessorBuilder::new()
+            .with_memory_size(16 * 1024)
+            .build();
+        
+        assert_eq!(16 * 1024, processor.memory_size());
+    }
+    
+    #[test]
+    fn test_default_memory_size() {
+        let processor = risc_v_emulator::processor::Processor::new();
+        
+        // Default size should be 4KB (increased from 1KB)
+        assert_eq!(4 * 1024, processor.memory_size());
+    }

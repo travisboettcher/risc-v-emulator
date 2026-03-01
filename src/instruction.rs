@@ -53,10 +53,9 @@ pub const SB: u32 = 0b000;
 pub const SH: u32 = 0b001;
 pub const SW: u32 = 0b010;
 
-type Memory = [u8; 1024];
 
 pub trait Instruction {
-    fn execute(self, register: &mut Register, memory: &mut Memory);
+    fn execute(self, register: &mut Register, memory: &mut [u8]);
     fn parse(bits: u32) -> InstructionEnum;
 }
 
@@ -70,7 +69,7 @@ pub struct IFormatInstruction {
 }
 
 impl Instruction for IFormatInstruction {
-    fn execute(self, register: &mut Register, memory: &mut Memory) {
+    fn execute(self, register: &mut Register, memory: &mut [u8]) {
         match self.opcode {
             OP_IMM => {
                 match self.funct3 {
@@ -216,7 +215,7 @@ pub struct JFormatInstruction {
 }
 
 impl Instruction for JFormatInstruction {
-    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+    fn execute(self, register: &mut Register, _memory: &mut [u8]) {
         match self.opcode {
             JAL => {
                 if self.rd > 0 {
@@ -254,7 +253,7 @@ pub struct RFormatInstruction {
 }
 
 impl Instruction for RFormatInstruction {
-    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+    fn execute(self, register: &mut Register, _memory: &mut [u8]) {
         let funct = (self.funct7 << 3) + self.funct3;
         match funct {
             ADD => { // Add
@@ -348,7 +347,7 @@ pub struct UFormatInstruction {
 }
 
 impl Instruction for UFormatInstruction {
-    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+    fn execute(self, register: &mut Register, _memory: &mut [u8]) {
         match self.opcode {
             LUI => {
                 register.put(self.rd, (self.imm as u32) << 12);
@@ -386,7 +385,7 @@ pub struct BFormatInstruction {
 }
 
 impl Instruction for BFormatInstruction {
-    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+    fn execute(self, register: &mut Register, _memory: &mut [u8]) {
         match self.funct3 {
             BEQ => {
                 if register.get(self.rs1) == register.get(self.rs2) {
@@ -449,7 +448,7 @@ pub struct SFormatInstruction {
 }
 
 impl Instruction for SFormatInstruction {
-    fn execute(self, register: &mut Register, memory: &mut Memory) {
+    fn execute(self, register: &mut Register, memory: &mut [u8]) {
         match self.funct3 {
             SB => {
                 let m = (register.get(self.rs1) as i32 + self.imm) as usize;
@@ -534,7 +533,7 @@ pub fn from(bits: [u8; 4]) -> Option<InstructionEnum> {
 }
 
 impl InstructionEnum {
-    pub fn execute(self, register: &mut Register, memory: &mut Memory) {
+    pub fn execute(self, register: &mut Register, memory: &mut [u8]) {
         match self {
             InstructionEnum::IFormatInstruction { instruction } => {
                 instruction.execute(register, memory)
