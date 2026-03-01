@@ -1,3 +1,37 @@
+//! Assembly language compiler for RISC-V instructions.
+//!
+//! This module provides functions to parse and compile RISC-V assembly language
+//! into machine-executable 32-bit instructions. It handles:
+//! - All RISC-V instruction formats (R, I, S, B, U, J type)
+//! - Pseudo-instruction expansion (e.g., `nop`, `li`, `mv`, `j`)
+//! - Symbol table management for labels and forward/backward references
+//! - Comment removal and whitespace normalization
+//!
+//! # Instruction Formats Supported
+//!
+//! The assembler compiles instructions into their binary 32-bit representations:
+//! - **R-type**: `add rd, rs1, rs2` - Register-register operations
+//! - **I-type**: `addi rd, rs1, imm` - Register-immediate operations
+//! - **S-type**: `sw rs2, offset(rs1)` - Store (memory write)
+//! - **B-type**: `beq rs1, rs2, label` - Conditional branch
+//! - **U-type**: `lui rd, imm` - Upper immediate load
+//! - **J-type**: `jal rd, label` - Jump and link
+//!
+//! # Example
+//!
+//! ```
+//! use risc_v_emulator::assembler::assemble;
+//!
+//! let assembly = vec![
+//!     "addi x5, x0, 42".to_string(),
+//!     "addi x6, x5, 8".to_string(),
+//!     "add x7, x5, x6".to_string(),
+//! ];
+//!
+//! let executable = assemble(assembly);
+//! assert_eq!(executable.len(), 3);  // Three instructions compiled
+//! ```
+
 use crate::immediates::BImmediate;
 use crate::immediates::{IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
 use crate::instruction;
@@ -504,6 +538,93 @@ fn get_offset(addr: i32, instruction_location: i32) -> i32 {
     addr - (instruction_location + 4)
 }
 
+/// Assembles a list of assembly language instructions into executable machine code.
+///
+/// This function takes a vector of assembly language instruction strings and
+/// compiles them into a vector of 32-bit machine code instructions suitable for
+/// loading into a [`Processor`](crate::processor::Processor).
+///
+/// The assembler performs multiple passes:
+/// 1. **First pass**: Builds symbol table for labels and expands pseudo-instructions
+/// 2. **Second pass**: Compiles each instruction into 32-bit machine code
+///
+/// # Features
+///
+/// - **Label Support**: Lines ending with `:` define symbols at that location
+/// - **Comment Support**: Everything after `#` on a line is treated as a comment
+/// - **Pseudo-instruction Expansion**: High-level instructions are converted to base instructions
+/// - **Register Aliases**: Both `x0`-`x31` and ABI names (`zero`, `ra`, `sp`, etc.) are supported
+/// - **Whitespace Normalization**: Handles various spacing in input
+///
+/// # Supported Pseudo-Instructions
+///
+/// The assembler expands the following pseudo-instructions to their base equivalents:
+/// - `nop` → `addi x0, x0, 0`
+/// - `li rd, imm` → `addi rd, x0, imm`
+/// - `mv rd, rs` → `addi rd, rs, 0`
+/// - `not rd, rs` → `xori rd, rs, -1`
+/// - `neg rd, rs` → `sub rd, x0, rs`
+/// - `seqz rd, rs` → `sltiu rd, rs, 1`
+/// - `snez rd, rs` → `sltu rd, x0, rs`
+/// - `sltz rd, rs` → `slt rd, rs, x0`
+/// - `sgtz rd, rs` → `slt rd, x0, rs`
+/// - `beqz rs, label` → `beq rs, x0, label`
+/// - `bnez rs, label` → `bne rs, x0, label`
+/// - `bgt rs, rt, label` → `blt rt, rs, label`
+/// - `ble rs, rt, label` → `bge rt, rs, label`
+/// - `j label` → `jal x0, label`
+/// - `ret` → `jalr x0, x1, 0`
+/// - `call addr` → Multi-instruction sequence for long jumps
+///
+/// # Arguments
+///
+/// * `instructions` - A vector of assembly language strings, one instruction per line
+///
+/// # Returns
+///
+/// A vector of 32-bit machine code instructions ready for execution.
+///
+/// # Panics
+///
+/// - Panics if an instruction contains an unrecognized mnemonic
+/// - Panics if a register name is invalid
+/// - Panics if an immediate value cannot be parsed as an integer
+/// - Panics if instruction operands are incorrectly formatted
+///
+/// # Example
+///
+/// ```
+/// use risc_v_emulator::assembler::assemble;
+///
+/// let code = vec![
+///     "# Initialize registers".to_string(),
+///     "li x5, 100".to_string(),      // Load immediate
+///     "li x6, 50".to_string(),       // Pseudo-instruction
+///     "".to_string(),                // Empty lines are ignored
+///     "add x7, x5, x6".to_string(),  // Add operation
+/// ];
+///
+/// let executable = assemble(code);
+/// // Should produce 3 instructions (comments and empty lines ignored,
+/// // "li" pseudo-instructions expanded)
+/// assert!(executable.len() >= 3);
+/// ```
+///
+/// # Label and Symbol Example
+///
+/// ```
+/// use risc_v_emulator::assembler::assemble;
+///
+/// let code = vec![
+///     "li x5, 0".to_string(),
+///     "loop:".to_string(),
+///     "addi x5, x5, 1".to_string(),
+///     "beq x5, x0, loop".to_string(),
+/// ];
+///
+/// let executable = assemble(code);
+/// // Labels are resolved to memory addresses
+/// ```
 pub fn assemble(instructions: Vec<String>) -> Vec<u32> {
     let mut symbol_table = HashMap::new();
     let mut trimmed_instructions = vec!();
