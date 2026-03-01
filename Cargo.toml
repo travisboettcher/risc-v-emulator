@@ -9,3 +9,10 @@ edition = "2021"
 bitfield = "0.14.0"
 immediate_derive = { path = "immediate_derive" }
 regex = "1.11.1"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "processor_benchmarks"
+harness = false
