@@ -9,28 +9,28 @@ mod tests {
     fn test_strlen() {
         let mut processor = Processor::new();
 
-        processor.load_instructions(assemble("examples/strlen.s"));
+        processor.load_instructions(assemble("examples/strlen.s")).expect("Failed to load instructions");
         let bits: Vec<u8> = "hello".chars().map(|c| c as u8).collect();
-        let a0 = processor.load_into_memory(bits.as_slice());
-        processor.set_register_value(10, a0 as u32);
-        processor.execute_instructions();
+        let a0 = processor.load_into_memory(bits.as_slice()).expect("Failed to load into memory");
+        processor.set_register_value(10, a0 as u32).expect("Failed to set register");
+        processor.execute_instructions().expect("Failed to execute");
 
-        assert_eq!(5, processor.get_registry_value(10));
+        assert_eq!(5, processor.get_registry_value(10).expect("Failed to get register value"));
     }
 
     #[test]
     fn test_strcopy() {
         let mut processor = Processor::new();
 
-        processor.load_instructions(assemble("examples/strcopy.s"));
+        processor.load_instructions(assemble("examples/strcopy.s")).expect("Failed to load instructions");
         let bits: Vec<u8> = "hello".chars().map(|c| c as u8).collect();
-        let a1 = processor.load_into_memory(bits.as_slice());
+        let a1 = processor.load_into_memory(bits.as_slice()).expect("Failed to load into memory");
         let a0 = a1 + 6;
-        processor.set_register_value(10, a0 as u32);
-        processor.set_register_value(11, a1 as u32);
-        processor.execute_instructions();
+        processor.set_register_value(10, a0 as u32).expect("Failed to set register");
+        processor.set_register_value(11, a1 as u32).expect("Failed to set register");
+        processor.execute_instructions().expect("Failed to execute");
 
-        let result = processor.get_copy_of_memory(a0..a0 + 5);
+        let result = processor.get_copy_of_memory(a0..a0 + 5).expect("Failed to get memory");
         assert_eq!(bits, result);
     }
 
@@ -38,17 +38,17 @@ mod tests {
     fn test_strncpy() {
         let mut processor = Processor::new();
 
-        processor.load_instructions(assemble("examples/strncpy.s"));
+        processor.load_instructions(assemble("examples/strncpy.s")).expect("Failed to load instructions");
         let bits: Vec<u8> = "hello".chars().map(|c| c as u8).collect();
-        let a1 = processor.load_into_memory(bits.as_slice());
+        let a1 = processor.load_into_memory(bits.as_slice()).expect("Failed to load into memory");
         let a0 = a1 + 6;
         let a2 = 10u32;
-        processor.set_register_value(10, a0 as u32);
-        processor.set_register_value(11, a1 as u32);
-        processor.set_register_value(12, a2);
-        processor.execute_instructions();
+        processor.set_register_value(10, a0 as u32).expect("Failed to set register");
+        processor.set_register_value(11, a1 as u32).expect("Failed to set register");
+        processor.set_register_value(12, a2).expect("Failed to set register");
+        processor.execute_instructions().expect("Failed to execute");
 
-        let result = processor.get_copy_of_memory(a0..a0 + 10);
+        let result = processor.get_copy_of_memory(a0..a0 + 10).expect("Failed to get memory");
         let expected: Vec<u8> = "hello\0\0\0\0\0".chars().map(|c| c as u8).collect();
         assert_eq!(expected, result);
     }
@@ -57,19 +57,19 @@ mod tests {
     fn test_bubsort() {
         let mut processor = Processor::new();
 
-        processor.load_instructions(assemble("examples/bubsort.s"));
+        processor.load_instructions(assemble("examples/bubsort.s")).expect("Failed to load instructions");
         let a0 = processor.load_into_memory(&[
             0, 0, 0, 1, 
             0, 0, 0, 4, 
             0, 0, 0, 3, 
             0, 0, 0, 2, 
             0, 0, 0, 5
-        ]);
-        processor.set_register_value(10, a0 as u32);
-        processor.set_register_value(11, 5);
-        processor.execute_instructions();
+        ]).expect("Failed to load into memory");
+        processor.set_register_value(10, a0 as u32).expect("Failed to set register");
+        processor.set_register_value(11, 5).expect("Failed to set register");
+        processor.execute_instructions().expect("Failed to execute");
 
-        let result = processor.get_copy_of_memory(a0..a0 + 20);
+        let result = processor.get_copy_of_memory(a0..a0 + 20).expect("Failed to get memory");
         assert_eq!(vec![
             0, 0, 0, 1, 
             0, 0, 0, 2, 
@@ -83,13 +83,13 @@ mod tests {
     fn test_strrev() {
         let mut processor = Processor::new();
 
-        processor.load_instructions(assemble("examples/strrev.s"));
+        processor.load_instructions(assemble("examples/strrev.s")).expect("Failed to load instructions");
         let bits: Vec<u8> = "hello\0".chars().map(|c| c as u8).collect();
-        let a0 = processor.load_into_memory(bits.as_slice());
-        processor.set_register_value(10, a0 as u32);
-        processor.execute_instructions();
+        let a0 = processor.load_into_memory(bits.as_slice()).expect("Failed to load into memory");
+        processor.set_register_value(10, a0 as u32).expect("Failed to set register");
+        processor.execute_instructions().expect("Failed to execute");
 
-        let result = processor.get_copy_of_memory(a0..a0 + 5);
+        let result = processor.get_copy_of_memory(a0..a0 + 5).expect("Failed to get memory");
         let expected: Vec<u8> = "olleh".chars().map(|c| c as u8).collect();
         assert_eq!(expected, result);
     }
@@ -98,7 +98,7 @@ mod tests {
     fn test_arraysum() {
         let mut processor = Processor::new();
 
-        processor.load_instructions(assemble("examples/arraysum.s"));
+        processor.load_instructions(assemble("examples/arraysum.s")).expect("Failed to load instructions");
         let ints = [
             0, 0, 0, 1, 
             0, 0, 0, 2, 
@@ -111,12 +111,12 @@ mod tests {
             0, 0, 0, 9, 
             0, 0, 0, 10
         ];
-        let a0 = processor.load_into_memory(&ints);
-        processor.set_register_value(10, a0 as u32);
+        let a0 = processor.load_into_memory(&ints).expect("Failed to load into memory");
+        processor.set_register_value(10, a0 as u32).expect("Failed to set register");
         processor.set_register_value(11, ints.len() as u32);
-        processor.execute_instructions();
+        processor.execute_instructions().expect("Failed to execute");
 
-        let result = processor.get_registry_value(10);
+        let result = processor.get_registry_value(10).expect("Failed to get register");
         assert_eq!(55, result);
     }
 
@@ -124,7 +124,7 @@ mod tests {
     fn test_binsearch() {
         let mut processor = Processor::new();
 
-        processor.load_instructions(assemble("examples/binsearch.s"));
+        processor.load_instructions(assemble("examples/binsearch.s")).expect("Failed to load instructions");
         let ints = [
             0, 0, 0, 1,
             0, 0, 0, 2,
@@ -137,13 +137,13 @@ mod tests {
             0, 0, 0, 9,
             0, 0, 0, 10
         ];
-        let a0 = processor.load_into_memory(&ints);
-        processor.set_register_value(10, a0 as u32);
-        processor.set_register_value(11, 8);
-        processor.set_register_value(12, 10);
-        processor.execute_instructions();
+        let a0 = processor.load_into_memory(&ints).expect("Failed to load into memory");
+        processor.set_register_value(10, a0 as u32).expect("Failed to set register");
+        processor.set_register_value(11, 8).expect("Failed to set register");
+        processor.set_register_value(12, 10).expect("Failed to set register");
+        processor.execute_instructions().expect("Failed to execute");
 
-        let result = processor.get_registry_value(10);
+        let result = processor.get_registry_value(10).expect("Failed to get register");
         assert_eq!(7, result);
     }
     
@@ -151,10 +151,10 @@ mod tests {
     fn test_sum10() {
         let mut processor = Processor::new();
         
-        processor.load_instructions(assemble("examples/sum10.s"));
-        processor.execute_instructions();
+        processor.load_instructions(assemble("examples/sum10.s")).expect("Failed to load instructions");
+        processor.execute_instructions().expect("Failed to execute");
 
-        let result = processor.get_registry_value(10);
+        let result = processor.get_registry_value(10).expect("Failed to get register");
         assert_eq!(20, result);
     }
     

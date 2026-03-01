@@ -1,6 +1,7 @@
 use crate::immediates::{BImmediate, IImmediate, Immediate, JImmediate, SImmediate, UImmediate};
 use crate::register::Register;
 use crate::math_utils::MixedIntegerOps;
+use crate::error::{EmulatorError, Result};
 
 /// opcodes
 pub const OP_IMM: u32 = 0b0010011;
@@ -56,7 +57,7 @@ pub const SW: u32 = 0b010;
 type Memory = [u8; 1024];
 
 pub trait Instruction {
-    fn execute(self, register: &mut Register, memory: &mut Memory);
+    fn execute(self, register: &mut Register, memory: &mut Memory) -> Result<()>;
     fn parse(bits: u32) -> InstructionEnum;
 }
 
@@ -70,36 +71,36 @@ pub struct IFormatInstruction {
 }
 
 impl Instruction for IFormatInstruction {
-    fn execute(self, register: &mut Register, memory: &mut Memory) {
+    fn execute(self, register: &mut Register, memory: &mut Memory) -> Result<()> {
         match self.opcode {
             OP_IMM => {
                 match self.funct3 {
                     ADDI => { // Addi
-                        let i = register.get(self.rs1);
-                        register.put(self.rd, MixedIntegerOps::wrapping_add_signed(i, self.imm as i32));
+                        let i = register.get_unchecked(self.rs1);
+                        register.put_unchecked(self.rd, MixedIntegerOps::wrapping_add_signed(i, self.imm as i32));
                     },
                     SLLI => { // Slli
-                        register.put(self.rd, register.get(self.rs1) << self.imm)
+                        register.put_unchecked(self.rd, register.get_unchecked(self.rs1) << self.imm)
                     },
                     SLTI => { // Slti
-                        let i = register.get(self.rs1) as i32;
+                        let i = register.get_unchecked(self.rs1) as i32;
                         if i < (self.imm as i32) {
-                            register.put(self.rd, 1);
+                            register.put_unchecked(self.rd, 1);
                         } else {
-                            register.put(self.rd, 0);
+                            register.put_unchecked(self.rd, 0);
                         }
                     },
                     SLTIU => { // Sltiu
-                        let i = register.get(self.rs1);
+                        let i = register.get_unchecked(self.rs1);
                         if i < (self.imm as u32) {
-                            register.put(self.rd, 1);
+                            register.put_unchecked(self.rd, 1);
                         } else {
-                            register.put(self.rd, 0);
+                            register.put_unchecked(self.rd, 0);
                         }
                     },
                     XORI => { // Xori
-                        let i = register.get(self.rs1);
-                        register.put(self.rd, i ^ (self.imm as u32));
+                        let i = register.get_unchecked(self.rs1);
+                        register.put_unchecked(self.rd, i ^ (self.imm as u32));
                     },
                     SRLI => { // Srli and Srai
                         // need to discriminate between srli and srai
@@ -107,45 +108,45 @@ impl Instruction for IFormatInstruction {
                         match discriminator {
                             0b00 => {
                                 let shift = self.imm & 0b11111;
-                                let i = register.get(self.rs1);
-                                register.put(self.rd, i >> shift);
+                                let i = register.get_unchecked(self.rs1);
+                                register.put_unchecked(self.rd, i >> shift);
                             },
                             0b01 => {
                                 let shift = self.imm & 0b11111;
-                                let i = register.get(self.rs1) as i32;
-                                register.put(self.rd, (i >> shift) as u32);
+                                let i = register.get_unchecked(self.rs1) as i32;
+                                register.put_unchecked(self.rd, (i >> shift) as u32);
                             },
-                            _ => panic!()
+                            _ => return Err(EmulatorError::InvalidInstruction(0))
                         }
                     }
                     ORI => { // Ori
-                        let i = register.get(self.rs1);
-                        register.put(self.rd, i | (self.imm as u32));
+                        let i = register.get_unchecked(self.rs1);
+                        register.put_unchecked(self.rd, i | (self.imm as u32));
                     },
                     ANDI => { // Andi
-                        let i = register.get(self.rs1);
-                        register.put(self.rd, i & (self.imm as u32));
+                        let i = register.get_unchecked(self.rs1);
+                        register.put_unchecked(self.rd, i & (self.imm as u32));
                     },
-                    _ => return
+                    _ => return Ok(())
                 }
             },
             JALR => {
                 let t = register.pc();
-                register.update_pc((register.get(self.rs1) as i32 + self.imm as i32) as usize);
+                register.update_pc((register.get_unchecked(self.rs1) as i32 + self.imm as i32) as usize);
                 if self.rd != 0 {
-                    register.put(self.rd, t as u32);
+                    register.put_unchecked(self.rd, t as u32);
                 }
             },
             LOAD => {
                 match self.funct3 {
                     LB => {
-                        let m = register.get(self.rs1) as i32;
+                        let m = register.get_unchecked(self.rs1) as i32;
                         let offset = self.imm as i32;
                         let i = m + offset;
-                        register.put(self.rd, memory[i as usize] as i8 as u32)
+                        register.put_unchecked(self.rd, memory[i as usize] as i8 as u32)
                     },
                     LH => {
-                        let m = register.get(self.rs1) as i32;
+                        let m = register.get_unchecked(self.rs1) as i32;
                         let offset = self.imm as i32;
                         let i = m + offset;
 
@@ -154,38 +155,39 @@ impl Instruction for IFormatInstruction {
                         bits[1] = 0xFF;
                         bits[2] = memory[i as usize];
                         bits[3] = memory[(i + 1)as usize];
-                        register.put(self.rd, u32::from_be_bytes(bits))
+                        register.put_unchecked(self.rd, u32::from_be_bytes(bits))
                     },
                     LW => {
-                        let m = register.get(self.rs1) as i32;
+                        let m = register.get_unchecked(self.rs1) as i32;
                         let offset = self.imm as i32;
                         let i = m + offset;
 
                         let mut bits: [u8; 4] = [0u8; 4];
                         bits.clone_from_slice(&memory[i as usize..(i + 4) as usize]);
-                        register.put(self.rd, u32::from_be_bytes(bits))
+                        register.put_unchecked(self.rd, u32::from_be_bytes(bits))
                     },
                     LBU => {
-                        let m = register.get(self.rs1) as i32;
+                        let m = register.get_unchecked(self.rs1) as i32;
                         let offset = self.imm as i32;
                         let i = m + offset;
-                        register.put(self.rd, memory[i as usize] as u8 as u32)
+                        register.put_unchecked(self.rd, memory[i as usize] as u8 as u32)
                     },
                     LHU => {
-                        let m = register.get(self.rs1) as i32;
+                        let m = register.get_unchecked(self.rs1) as i32;
                         let offset = self.imm as i32;
                         let i = m + offset;
 
                         let mut bits: [u8; 4] = [0u8; 4];
                         bits[2] = memory[i as usize];
                         bits[3] = memory[(i + 1)as usize];
-                        register.put(self.rd, u32::from_be_bytes(bits))
+                        register.put_unchecked(self.rd, u32::from_be_bytes(bits))
                     },
-                    _ => return
+                    _ => return Ok(())
                 }
             },
-            _ => return
+            _ => return Ok(())
         }
+        Ok(())
     }
 
     fn parse(bits: u32) -> InstructionEnum {
@@ -216,16 +218,17 @@ pub struct JFormatInstruction {
 }
 
 impl Instruction for JFormatInstruction {
-    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+    fn execute(self, register: &mut Register, memory: &mut Memory) -> Result<()> {
         match self.opcode {
             JAL => {
                 if self.rd > 0 {
-                    register.put(self.rd, register.pc() as u32);
+                    register.put_unchecked(self.rd, register.pc() as u32);
                 }
                 register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
             },
-            _ => return
+            _ => return Ok(())
         }
+        Ok(())
     }
 
     fn parse(bits: u32) -> InstructionEnum {
@@ -254,71 +257,72 @@ pub struct RFormatInstruction {
 }
 
 impl Instruction for RFormatInstruction {
-    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+    fn execute(self, register: &mut Register, memory: &mut Memory) -> Result<()> {
         let funct = (self.funct7 << 3) + self.funct3;
         match funct {
             ADD => { // Add
-                let i = register.get(self.rs1);
-                let j = register.get(self.rs2);
-                register.put(self.rd, i + j);
+                let i = register.get_unchecked(self.rs1);
+                let j = register.get_unchecked(self.rs2);
+                register.put_unchecked(self.rd, i + j);
             },
             SUB => {
-                let i = register.get(self.rs1);
-                let j = register.get(self.rs2);
-                register.put(self.rd, i - j);
+                let i = register.get_unchecked(self.rs1);
+                let j = register.get_unchecked(self.rs2);
+                register.put_unchecked(self.rd, i - j);
             },
             SLL => {
-                let i = register.get(self.rs1);
-                let j = register.get(self.rs2) & 0b11111;
-                register.put(self.rd, i << j)
+                let i = register.get_unchecked(self.rs1);
+                let j = register.get_unchecked(self.rs2) & 0b11111;
+                register.put_unchecked(self.rd, i << j)
             },
             SLT => {
-                let i = register.get(self.rs1) as i32;
-                let j = register.get(self.rs2) as i32;
+                let i = register.get_unchecked(self.rs1) as i32;
+                let j = register.get_unchecked(self.rs2) as i32;
 
                 if i < j {
-                    register.put(self.rd, 1);
+                    register.put_unchecked(self.rd, 1);
                 } else {
-                    register.put(self.rd, 0);
+                    register.put_unchecked(self.rd, 0);
                 }
             },
             SLTU => {
-                let i = register.get(self.rs1);
-                let j = register.get(self.rs2);
+                let i = register.get_unchecked(self.rs1);
+                let j = register.get_unchecked(self.rs2);
                 if i < j {
-                    register.put(self.rd, 1);
+                    register.put_unchecked(self.rd, 1);
                 } else {
-                    register.put(self.rd, 0);
+                    register.put_unchecked(self.rd, 0);
                 }
             },
             XOR => {
-                let i = register.get(self.rs1);
-                let j = register.get(self.rs2);
-                register.put(self.rd, i ^ j);
+                let i = register.get_unchecked(self.rs1);
+                let j = register.get_unchecked(self.rs2);
+                register.put_unchecked(self.rd, i ^ j);
             },
             SRL => {
-                let i = register.get(self.rs1);
-                let j = register.get(self.rs2) & 0b11111;
-                register.put(self.rd, i >> j);
+                let i = register.get_unchecked(self.rs1);
+                let j = register.get_unchecked(self.rs2) & 0b11111;
+                register.put_unchecked(self.rd, i >> j);
             },
             SRA => {
-                let i = register.get(self.rs1) as i32;
-                let j = register.get(self.rs2) & 0b11111;
-                register.put(self.rd, (i >> j) as u32);
+                let i = register.get_unchecked(self.rs1) as i32;
+                let j = register.get_unchecked(self.rs2) & 0b11111;
+                register.put_unchecked(self.rd, (i >> j) as u32);
             },
             OR => {
-                let i = register.get(self.rs1);
-                let j = register.get(self.rs2);
-                register.put(self.rd, i | j);
+                let i = register.get_unchecked(self.rs1);
+                let j = register.get_unchecked(self.rs2);
+                register.put_unchecked(self.rd, i | j);
             },
             AND => {
-                let i = register.get(self.rs1);
-                let j = register.get(self.rs2);
+                let i = register.get_unchecked(self.rs1);
+                let j = register.get_unchecked(self.rs2);
                 println!("i: {}, j: {}, i & j: {}", i, j, i&j);
-                register.put(self.rd, i & j);
+                register.put_unchecked(self.rd, i & j);
             }
-            _ => return
+            _ => return Ok(())
         }
+        Ok(())
     }
 
     fn parse(bits: u32) -> InstructionEnum {
@@ -348,17 +352,18 @@ pub struct UFormatInstruction {
 }
 
 impl Instruction for UFormatInstruction {
-    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+    fn execute(self, register: &mut Register, memory: &mut Memory) -> Result<()> {
         match self.opcode {
             LUI => {
-                register.put(self.rd, (self.imm as u32) << 12);
+                register.put_unchecked(self.rd, (self.imm as u32) << 12);
             },
             AUIPC => {
                 let u_immediate = (self.imm as u32) << 12;
-                register.put(self.rd, register.pc() as u32 + u_immediate);
+                register.put_unchecked(self.rd, register.pc() as u32 + u_immediate);
             },
-            _ => return
+            _ => return Ok(())
         }
+        Ok(())
     }
 
     fn parse(bits: u32) -> InstructionEnum {
@@ -386,40 +391,41 @@ pub struct BFormatInstruction {
 }
 
 impl Instruction for BFormatInstruction {
-    fn execute(self, register: &mut Register, _memory: &mut Memory) {
+    fn execute(self, register: &mut Register, memory: &mut Memory) -> Result<()> {
         match self.funct3 {
             BEQ => {
-                if register.get(self.rs1) == register.get(self.rs2) {
+                if register.get_unchecked(self.rs1) == register.get_unchecked(self.rs2) {
                     register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
                 }
             },
             BNE => {
-                if register.get(self.rs1) != register.get(self.rs2) {
+                if register.get_unchecked(self.rs1) != register.get_unchecked(self.rs2) {
                     register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
                 }
             },
             BLT => {
-                if (register.get(self.rs1) as i32) < (register.get(self.rs2) as i32) {
+                if (register.get_unchecked(self.rs1) as i32) < (register.get_unchecked(self.rs2) as i32) {
                     register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
                 }
             },
             BGE => {
-                if (register.get(self.rs1) as i32) >= (register.get(self.rs2) as i32) {
+                if (register.get_unchecked(self.rs1) as i32) >= (register.get_unchecked(self.rs2) as i32) {
                     register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
                 }
             },
             BLTU => {
-                if register.get(self.rs1) < register.get(self.rs2) {
+                if register.get_unchecked(self.rs1) < register.get_unchecked(self.rs2) {
                     register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
                 }
             },
             BGEU => {
-                if register.get(self.rs1) >= register.get(self.rs2) {
+                if register.get_unchecked(self.rs1) >= register.get_unchecked(self.rs2) {
                     register.update_pc(MixedIntegerOps::wrapping_add_signed(register.pc(), self.imm));
                 }
             },
-            _ => return
+            _ => return Ok(())
         }
+        Ok(())
     }
 
     fn parse(bits: u32) -> InstructionEnum {
@@ -449,28 +455,29 @@ pub struct SFormatInstruction {
 }
 
 impl Instruction for SFormatInstruction {
-    fn execute(self, register: &mut Register, memory: &mut Memory) {
+    fn execute(self, register: &mut Register, memory: &mut Memory) -> Result<()> {
         match self.funct3 {
             SB => {
-                let m = (register.get(self.rs1) as i32 + self.imm) as usize;
-                memory[m] = register.get(self.rs2).to_be_bytes()[3];
+                let m = (register.get_unchecked(self.rs1) as i32 + self.imm) as usize;
+                memory[m] = register.get_unchecked(self.rs2).to_be_bytes()[3];
             },
             SH => {
-                let m = (register.get(self.rs1) as i32 + self.imm) as usize;
-                let r = register.get(self.rs2).to_be_bytes();
+                let m = (register.get_unchecked(self.rs1) as i32 + self.imm) as usize;
+                let r = register.get_unchecked(self.rs2).to_be_bytes();
                 memory[m] = r[2];
                 memory[m + 1] = r[3]
             },
             SW => {
-                let m = (register.get(self.rs1) as i32 + self.imm) as usize;
-                let r = register.get(self.rs2).to_be_bytes();
+                let m = (register.get_unchecked(self.rs1) as i32 + self.imm) as usize;
+                let r = register.get_unchecked(self.rs2).to_be_bytes();
                 memory[m] = r[0];
                 memory[m + 1] = r[1];
                 memory[m + 2] = r[2];
                 memory[m + 3] = r[3];
             },
-            _ => return
+            _ => return Ok(())
         }
+        Ok(())
     }
 
     fn parse(bits: u32) -> InstructionEnum {
@@ -517,24 +524,24 @@ pub enum InstructionEnum {
 // Implement SCALL/SBREAK/CSRR* with a single SYSTEM instruction that always traps
 // Implement FENCE and FENCE.I as NOPs
 
-pub fn from(bits: [u8; 4]) -> Option<InstructionEnum> {
+pub fn from(bits: [u8; 4]) -> Result<InstructionEnum> {
     let bits = u32::from_be_bytes(bits);
     let opcode_mask = 0b1111111;
     let opcode = bits & opcode_mask;
     match opcode {
-        OP_IMM | JALR | LOAD => Some(IFormatInstruction::parse(bits)),
-        OP => Some(RFormatInstruction::parse(bits)),
-        LUI | AUIPC => Some(UFormatInstruction::parse(bits)),
-        JAL => Some(JFormatInstruction::parse(bits)),
-        BRANCH => Some(BFormatInstruction::parse(bits)),
-        STORE => Some(SFormatInstruction::parse(bits)),
-        FENCE => todo!(),
-        _ => None
+        OP_IMM | JALR | LOAD => Ok(IFormatInstruction::parse(bits)),
+        OP => Ok(RFormatInstruction::parse(bits)),
+        LUI | AUIPC => Ok(UFormatInstruction::parse(bits)),
+        JAL => Ok(JFormatInstruction::parse(bits)),
+        BRANCH => Ok(BFormatInstruction::parse(bits)),
+        STORE => Ok(SFormatInstruction::parse(bits)),
+        FENCE => Err(EmulatorError::InvalidInstruction(bits)),
+        _ => Err(EmulatorError::InvalidInstruction(bits))
     }
 }
 
 impl InstructionEnum {
-    pub fn execute(self, register: &mut Register, memory: &mut Memory) {
+    pub fn execute(self, register: &mut Register, memory: &mut Memory) -> Result<()> {
         match self {
             InstructionEnum::IFormatInstruction { instruction } => {
                 instruction.execute(register, memory)
@@ -560,7 +567,7 @@ impl InstructionEnum {
     pub fn should_end(&self, register: &Register) -> bool {
         match self {
             InstructionEnum::IFormatInstruction { instruction: IFormatInstruction { opcode, rd, rs1, .. }} => {
-                opcode.clone() == JALR && rd.clone() == 0 && rs1.clone() == 1 && register.get(rs1.clone()) == 0
+                *opcode == JALR && *rd == 0 && *rs1 == 1 && register.get_unchecked(*rs1) == 0
             }
             _ => false
         }
@@ -575,8 +582,8 @@ mod tests {
     #[test]
     fn test_add() {
         let mut register = Register::new();
-        register.put(4, 0x7fffffff);
-        register.put(24, 0x1);
+        register.put_unchecked(4, 0x7fffffff);
+        register.put_unchecked(24, 0x1);
 
         let mut memory = [0u8; 1024];
 
@@ -589,13 +596,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(25), 0x80000000);
+        assert_eq!(register.get_unchecked(25), 0x80000000);
     }
 
     #[test]
     fn test_addi() {
         let mut register = Register::new();
-        register.put(20, 0x20000000);
+        register.put_unchecked(20, 0x20000000);
 
         let mut memory = [0u8; 1024];
 
@@ -608,14 +615,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(7), 0x1ffff800);
+        assert_eq!(register.get_unchecked(7), 0x1ffff800);
     }
 
     #[test]
     fn test_and() {
         let mut register = Register::new();
-        register.put(10, 0x3);
-        register.put(11, 0x55555556);
+        register.put_unchecked(10, 0x3);
+        register.put_unchecked(11, 0x55555556);
 
         let mut memory = [0u8; 1024];
 
@@ -628,13 +635,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(12), 0x2);
+        assert_eq!(register.get_unchecked(12), 0x2);
     }
 
     #[test]
     fn test_andi() {
         let mut register = Register::new();
-        register.put(10, 0x55555555);
+        register.put_unchecked(10, 0x55555555);
 
         let mut memory = [0u8; 1024];
 
@@ -647,7 +654,7 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(11), 0x114);
+        assert_eq!(register.get_unchecked(11), 0x114);
     }
 
     #[test]
@@ -663,7 +670,7 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(10), 0x100000);
+        assert_eq!(register.get_unchecked(10), 0x100000);
     }
 
     #[test]
@@ -679,14 +686,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(13), 0x3000);
+        assert_eq!(register.get_unchecked(13), 0x3000);
     }
 
     #[test]
     fn test_or() {
         let mut register = Register::new();
-        register.put(8, 0x100000);
-        register.put(26, 0x10);
+        register.put_unchecked(8, 0x100000);
+        register.put_unchecked(26, 0x10);
 
         let mut memory = [0u8; 1024];
 
@@ -699,13 +706,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(26), 0x100010);
+        assert_eq!(register.get_unchecked(26), 0x100010);
     }
 
     #[test]
     fn test_ori() {
         let mut register = Register::new();
-        register.put(17, 0x33333334);
+        register.put_unchecked(17, 0x33333334);
 
         let mut memory = [0u8; 1024];
 
@@ -718,14 +725,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(8), 0x333337ff);
+        assert_eq!(register.get_unchecked(8), 0x333337ff);
     }
 
     #[test]
     fn test_sll() {
         let mut register = Register::new();
-        register.put(12, 0x7fffffff);
-        register.put(26, 0x15);
+        register.put_unchecked(12, 0x7fffffff);
+        register.put_unchecked(26, 0x15);
 
         let mut memory = [0u8; 1024];
 
@@ -738,13 +745,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(16), 0xffe00000);
+        assert_eq!(register.get_unchecked(16), 0xffe00000);
     }
 
     #[test]
     fn test_slli() {
         let mut register = Register::new();
-        register.put(26, 0x66666666);
+        register.put_unchecked(26, 0x66666666);
 
         let mut memory = [0u8; 1024];
 
@@ -757,14 +764,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(26), 0x33330000);
+        assert_eq!(register.get_unchecked(26), 0x33330000);
     }
 
     #[test]
     fn test_slt_equal() {
         let mut register = Register::new();
-        register.put(26, 0x66666667);
-        register.put(18, 0x66666667);
+        register.put_unchecked(26, 0x66666667);
+        register.put_unchecked(18, 0x66666667);
 
         let mut memory = [0u8; 1024];
 
@@ -777,14 +784,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(26), 0x0);
+        assert_eq!(register.get_unchecked(26), 0x0);
     }
 
     #[test]
     fn test_slt_greater_than() {
         let mut register = Register::new();
-        register.put(26, 0x66666667);
-        register.put(18, 0x66666667);
+        register.put_unchecked(26, 0x66666667);
+        register.put_unchecked(18, 0x66666667);
 
         let mut memory = [0u8; 1024];
 
@@ -797,14 +804,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(26), 0x0);
+        assert_eq!(register.get_unchecked(26), 0x0);
     }
 
     #[test]
     fn test_slt_less_than() {
         let mut register = Register::new();
-        register.put(26, (-0x201i32) as u32);
-        register.put(18, 0x5);
+        register.put_unchecked(26, (-0x201i32) as u32);
+        register.put_unchecked(18, 0x5);
 
         let mut memory = [0u8; 1024];
 
@@ -817,13 +824,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(26), 0x1);
+        assert_eq!(register.get_unchecked(26), 0x1);
     }
 
     #[test]
     fn test_slti_eq() {
         let mut register = Register::new();
-        register.put(14, 0x10);
+        register.put_unchecked(14, 0x10);
 
         let mut memory = [0u8; 1024];
 
@@ -836,13 +843,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(27), 0x0);
+        assert_eq!(register.get_unchecked(27), 0x0);
     }
 
     #[test]
     fn test_slti_gt() {
         let mut register = Register::new();
-        register.put(25, -0x81i32 as u32);
+        register.put_unchecked(25, -0x81i32 as u32);
 
         let mut memory = [0u8; 1024];
 
@@ -855,13 +862,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(12), 0x0);
+        assert_eq!(register.get_unchecked(12), 0x0);
     }
 
     #[test]
     fn test_slti_lt() {
         let mut register = Register::new();
-        register.put(5, -0x1001i32 as u32);
+        register.put_unchecked(5, -0x1001i32 as u32);
 
         let mut memory = [0u8; 1024];
 
@@ -874,13 +881,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(5), 0x1);
+        assert_eq!(register.get_unchecked(5), 0x1);
     }
 
     #[test]
     fn test_sltiu_gt() {
         let mut register = Register::new();
-        register.put(23, 0x400);
+        register.put_unchecked(23, 0x400);
 
         let mut memory = [0u8; 1024];
 
@@ -893,13 +900,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(28), 0x0);
+        assert_eq!(register.get_unchecked(28), 0x0);
     }
 
     #[test]
     fn test_sltiu_lt() {
         let mut register = Register::new();
-        register.put(2, 0x800);
+        register.put_unchecked(2, 0x800);
 
         let mut memory = [0u8; 1024];
 
@@ -912,14 +919,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(2), 0x1);
+        assert_eq!(register.get_unchecked(2), 0x1);
     }
 
     #[test]
     fn test_sltu_lt() {
         let mut register = Register::new();
-        register.put(14, 0xfffffffe);
-        register.put(24, 0xffffffff);
+        register.put_unchecked(14, 0xfffffffe);
+        register.put_unchecked(24, 0xffffffff);
 
         let mut memory = [0u8; 1024];
 
@@ -932,14 +939,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(14), 0x1);
+        assert_eq!(register.get_unchecked(14), 0x1);
     }
 
     #[test]
     fn test_sltu_gt() {
         let mut register = Register::new();
-        register.put(5, 0xffffffff);
-        register.put(14, 0x0);
+        register.put_unchecked(5, 0xffffffff);
+        register.put_unchecked(14, 0x0);
 
         let mut memory = [0u8; 1024];
 
@@ -952,14 +959,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(19), 0x0);
+        assert_eq!(register.get_unchecked(19), 0x0);
     }
 
     #[test]
     fn test_sra() {
         let mut register = Register::new();
-        register.put(16, -0x80000000i32 as u32);
-        register.put(27, 0x8);
+        register.put_unchecked(16, -0x80000000i32 as u32);
+        register.put_unchecked(27, 0x8);
 
         let mut memory = [0u8; 1024];
 
@@ -972,13 +979,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(16), -0x800000i32 as u32)
+        assert_eq!(register.get_unchecked(16), -0x800000i32 as u32)
     }
 
     #[test]
     fn test_srai() {
         let mut register = Register::new();
-        register.put(31, -0x9i32 as u32);
+        register.put_unchecked(31, -0x9i32 as u32);
 
         let mut memory = [0u8; 1024];
 
@@ -991,14 +998,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(25), -0x1i32 as u32)
+        assert_eq!(register.get_unchecked(25), -0x1i32 as u32)
     }
 
     #[test]
     fn test_srl() {
         let mut register = Register::new();
-        register.put(26, -0x400001i32 as u32);
-        register.put(11, 0xf);
+        register.put_unchecked(26, -0x400001i32 as u32);
+        register.put_unchecked(11, 0xf);
 
         let mut memory = [0u8; 1024];
 
@@ -1011,13 +1018,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(11), 0x1ff7f)
+        assert_eq!(register.get_unchecked(11), 0x1ff7f)
     }
 
     #[test]
     fn test_srli() {
         let mut register = Register::new();
-        register.put(30, -0xb504i32 as u32);
+        register.put_unchecked(30, -0xb504i32 as u32);
 
         let mut memory = [0u8; 1024];
 
@@ -1030,14 +1037,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(8), 0x3fffd2bf)
+        assert_eq!(register.get_unchecked(8), 0x3fffd2bf)
     }
 
     #[test]
     fn test_sub() {
         let mut register = Register::new();
-        register.put(24, 0x55555554);
-        register.put(26, 0x6);
+        register.put_unchecked(24, 0x55555554);
+        register.put_unchecked(26, 0x6);
 
         let mut memory = [0u8; 1024];
 
@@ -1050,14 +1057,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(26), 0x5555554e)
+        assert_eq!(register.get_unchecked(26), 0x5555554e)
     }
 
     #[test]
     fn test_xor() {
         let mut register = Register::new();
-        register.put(27, 0x66666665);
-        register.put(24, 0x3);
+        register.put_unchecked(27, 0x66666665);
+        register.put_unchecked(24, 0x3);
 
         let mut memory = [0u8; 1024];
 
@@ -1070,13 +1077,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(24), 0x66666666)
+        assert_eq!(register.get_unchecked(24), 0x66666666)
     }
 
     #[test]
     fn test_xori() {
         let mut register = Register::new();
-        register.put(24, 0x33333334);
+        register.put_unchecked(24, 0x33333334);
 
         let mut memory = [0u8; 1024];
 
@@ -1089,13 +1096,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(10), 0xcccccb34)
+        assert_eq!(register.get_unchecked(10), 0xcccccb34)
     }
 
     #[test]
     fn test_lb() {
         let mut register = Register::new();
-        register.put(24, 0xFF);
+        register.put_unchecked(24, 0xFF);
 
         let mut memory = [0u8; 1024];
         memory[0xFF] = 0x34;
@@ -1112,13 +1119,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(10), 0b00000000_00000000_00000000_00110100)
+        assert_eq!(register.get_unchecked(10), 0b00000000_00000000_00000000_00110100)
     }
 
     #[test]
     fn test_lh() {
         let mut register = Register::new();
-        register.put(24, 0x101);
+        register.put_unchecked(24, 0x101);
 
         let mut memory = [0u8; 1024];
         memory[0xFF] = 0xcc;
@@ -1135,13 +1142,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(10), 0b11111111_11111111_11001011_00110100)
+        assert_eq!(register.get_unchecked(10), 0b11111111_11111111_11001011_00110100)
     }
 
     #[test]
     fn test_lw() {
         let mut register = Register::new();
-        register.put(24, 0xFF);
+        register.put_unchecked(24, 0xFF);
 
         let mut memory = [0u8; 1024];
         memory[0xFF] = 0xcc;
@@ -1158,13 +1165,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(10), 0b11001100_11001100_11001011_00110100)
+        assert_eq!(register.get_unchecked(10), 0b11001100_11001100_11001011_00110100)
     }
 
     #[test]
     fn test_lbu() {
         let mut register = Register::new();
-        register.put(24, 0xFF);
+        register.put_unchecked(24, 0xFF);
 
         let mut memory = [0u8; 1024];
         memory[0xFF] = 0x34;
@@ -1181,13 +1188,13 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(10), 0b00000000_00000000_00000000_00110100)
+        assert_eq!(register.get_unchecked(10), 0b00000000_00000000_00000000_00110100)
     }
 
     #[test]
     fn test_lhu() {
         let mut register = Register::new();
-        register.put(24, 0x101);
+        register.put_unchecked(24, 0x101);
 
         let mut memory = [0u8; 1024];
         memory[0xFF] = 0xcc;
@@ -1204,14 +1211,14 @@ mod tests {
         };
         instruction.execute(&mut register, &mut memory);
 
-        assert_eq!(register.get(10), 0b00000000_00000000_11001011_00110100)
+        assert_eq!(register.get_unchecked(10), 0b00000000_00000000_11001011_00110100)
     }
 
     #[test]
     fn test_beq_true() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, 0xFF);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, 0xFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1229,8 +1236,8 @@ mod tests {
     #[test]
     fn test_beq_false() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, -100i32 as u32);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, -100i32 as u32);
 
         let mut memory = [0u8; 1024];
 
@@ -1248,8 +1255,8 @@ mod tests {
     #[test]
     fn test_bne_true() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, -100i32 as u32);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, -100i32 as u32);
 
         let mut memory = [0u8; 1024];
 
@@ -1267,8 +1274,8 @@ mod tests {
     #[test]
     fn test_bne_false() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, 0xFF);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, 0xFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1286,8 +1293,8 @@ mod tests {
     #[test]
     fn test_blt_true() {
         let mut register = Register::new();
-        register.put(10, -100i32 as u32);
-        register.put(20, 0xFF);
+        register.put_unchecked(10, -100i32 as u32);
+        register.put_unchecked(20, 0xFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1305,8 +1312,8 @@ mod tests {
     #[test]
     fn test_blt_false() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, 0xFF);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, 0xFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1324,8 +1331,8 @@ mod tests {
     #[test]
     fn test_bge_true() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, -100i32 as u32);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, -100i32 as u32);
 
         let mut memory = [0u8; 1024];
 
@@ -1343,8 +1350,8 @@ mod tests {
     #[test]
     fn test_bge_false() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, 0xFFF);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, 0xFFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1362,8 +1369,8 @@ mod tests {
     #[test]
     fn test_bltu_true() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, -100i32 as u32);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, -100i32 as u32);
 
         let mut memory = [0u8; 1024];
 
@@ -1381,8 +1388,8 @@ mod tests {
     #[test]
     fn test_bltu_false() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, 0xFF);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, 0xFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1400,8 +1407,8 @@ mod tests {
     #[test]
     fn test_bgeu_true() {
         let mut register = Register::new();
-        register.put(10, -100i32 as u32);
-        register.put(20, 0xFF);
+        register.put_unchecked(10, -100i32 as u32);
+        register.put_unchecked(20, 0xFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1419,8 +1426,8 @@ mod tests {
     #[test]
     fn test_bgeu_false() {
         let mut register = Register::new();
-        register.put(10, 0xFF);
-        register.put(20, 0xFFF);
+        register.put_unchecked(10, 0xFF);
+        register.put_unchecked(20, 0xFFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1438,8 +1445,8 @@ mod tests {
     #[test]
     fn test_sb() {
         let mut register = Register::new();
-        register.put(10, 0x100);
-        register.put(20, 0xFFFFFF);
+        register.put_unchecked(10, 0x100);
+        register.put_unchecked(20, 0xFFFFFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1457,8 +1464,8 @@ mod tests {
     #[test]
     fn test_sh() {
         let mut register = Register::new();
-        register.put(10, 0x100);
-        register.put(20, 0xFFFFFF);
+        register.put_unchecked(10, 0x100);
+        register.put_unchecked(20, 0xFFFFFF);
 
         let mut memory = [0u8; 1024];
 
@@ -1477,8 +1484,8 @@ mod tests {
     #[test]
     fn test_sw() {
         let mut register = Register::new();
-        register.put(10, 0x100);
-        register.put(20, 0xFFFFFF);
+        register.put_unchecked(10, 0x100);
+        register.put_unchecked(20, 0xFFFFFF);
 
         let mut memory = [0u8; 1024];
 

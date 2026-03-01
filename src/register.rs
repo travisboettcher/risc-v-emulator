@@ -1,3 +1,5 @@
+use crate::error::{EmulatorError, Result};
+
 #[derive(Debug)]
 pub struct Register {
     _x: [u32; 32],
@@ -20,23 +22,35 @@ impl Register {
         self._pc = pc;
     }
 
-    pub fn put(&mut self, index: usize, value: u32) {
+    pub fn put(&mut self, index: usize, value: u32) -> Result<()> {
         if index == 0 {
-            panic!("Cannot modify the register at index 0");
+            return Err(EmulatorError::ModifyZeroRegister);
         }
 
         if index > 31 {
-            panic!("The register only has a length of 32, tried to modify index {}", index)
+            return Err(EmulatorError::InvalidRegister(index));
         }
 
         self._x[index] = value;
+        Ok(())
     }
 
-    pub fn get(&self, index: usize) -> u32 {
+    pub fn get(&self, index: usize) -> Result<u32> {
         if index > 31 {
-            panic!("The register only has a length of 32, tried to access index {}", index)
+            return Err(EmulatorError::InvalidRegister(index));
         }
 
+        Ok(self._x[index])
+    }
+
+    // Unchecked version for internal use where we know the index is valid
+    pub(crate) fn get_unchecked(&self, index: usize) -> u32 {
         self._x[index]
+    }
+
+    pub(crate) fn put_unchecked(&mut self, index: usize, value: u32) {
+        if index != 0 {
+            self._x[index] = value;
+        }
     }
 }
